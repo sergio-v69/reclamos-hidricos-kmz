@@ -59,6 +59,16 @@ python src/geocode_reclamos.py data/reclamos_hidricos.xlsx ^
 
 Abre `outputs/reclamos_hidricos_geolocalizados.kmz` en Google Earth Pro o Google Earth web. Cada punto incluye ticket, estado, problema, direccion y fuente de la coordenada.
 
+## Mapa interactivo
+
+Despues de generar el CSV geolocalizado, podes crear un mapa HTML interactivo con filtros, busqueda y popups:
+
+```bash
+python src/build_interactive_map.py outputs/reclamos_hidricos_geolocalizados.csv outputs/mapa_reclamos_interactivo.html
+```
+
+El HTML resultante se puede abrir en el navegador. Usa Leaflet y OpenStreetMap para mostrar el mapa.
+
 ## Precision
 
 La geolocalizacion automatica no siempre encuentra direcciones informales como manzana/parcela, barrios sin altura, intersecciones ambiguas o textos incompletos. Por eso el script solo genera puntos cuando encuentra una coordenada dentro del area configurada para Resistencia, Chaco.
