@@ -272,6 +272,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: #fff;
       border-color: #184e77;
     }
+    .edit-actions button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
     .edit-actions button.wide {
       grid-column: 1 / -1;
     }
@@ -392,7 +396,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div id="map"></div>
         <section id="editPanel" class="edit-panel" aria-live="polite">
           <h2>Edicion de ubicaciones</h2>
-          <p>Activa el modo edicion y arrastra un punto para corregir su posicion. Los cambios quedan guardados en este navegador.</p>
+          <p>Activa el modo edicion, arrastra los puntos y presiona Terminar edicion antes de actualizar los archivos.</p>
           <p><b id="editedCount">0</b> puntos corregidos.</p>
           <div class="edit-actions">
             <button id="applyCorrections" class="primary wide" type="button">Actualizar CSV/KMZ</button>
@@ -430,6 +434,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const markersLayer = L.layerGroup().addTo(map);
     const markerByIndex = new Map();
     const STORAGE_KEY = "reclamos_hidricos_location_edits_v1";
+    const savedCount = new URLSearchParams(window.location.search).get("actualizado");
+    if (savedCount !== null) {
+      localStorage.removeItem(STORAGE_KEY);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
     let corrections = loadCorrections();
     let editMode = false;
     let visibleTickets = [];
@@ -628,11 +637,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function updateEditedCount() {
       document.getElementById("editedCount").textContent = Object.keys(corrections).length;
+      updateApplyButtonState();
     }
 
     function setEditStatus(message, kind = "") {
       editStatus.textContent = message;
       editStatus.className = `edit-status ${kind}`.trim();
+    }
+
+    function updateApplyButtonState() {
+      const rows = correctionsRows();
+      const button = document.getElementById("applyCorrections");
+      button.disabled = editMode || rows.length === 0;
+      button.textContent = editMode ? "Termina la edicion para actualizar" : "Actualizar CSV/KMZ";
+      editPanel.classList.toggle("visible", editMode || rows.length > 0);
     }
 
     function updateTicketLocation(ticket, lat, lng) {
@@ -672,9 +690,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function setEditMode(enabled) {
       editMode = enabled;
       editButton.classList.toggle("active", editMode);
-      editButton.textContent = editMode ? "Edicion activa" : "Editar ubicaciones";
-      editPanel.classList.toggle("visible", editMode);
+      editButton.textContent = editMode ? "Terminar edicion" : "Editar ubicaciones";
+      editPanel.classList.toggle("visible", editMode || correctionsRows().length > 0);
       renderMarkers();
+      updateApplyButtonState();
+      if (!editMode && correctionsRows().length > 0) {
+        setEditStatus("Edicion finalizada. Ahora podes actualizar CSV/KMZ.", "ok");
+      }
     }
 
     function correctionsRows() {
@@ -757,10 +779,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .catch(() => postWithXhr());
     }
 
+    function submitCorrectionsForm(rows) {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/api/apply-corrections";
+      form.style.display = "none";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "corrections";
+      input.value = JSON.stringify(rows);
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    }
+
     async function applyCorrectionsToFiles() {
       const rows = correctionsRows();
       if (!rows.length) {
         setEditStatus("No hay correcciones para guardar.", "error");
+        return;
+      }
+      if (editMode) {
+        setEditStatus("Primero presiona Terminar edicion.", "error");
         return;
       }
       const button = document.getElementById("applyCorrections");
@@ -786,7 +826,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         applyFilters({ fit: false });
         setEditStatus(`CSV y KMZ actualizados: ${payload.updated} puntos.`, "ok");
       } catch (error) {
-        setEditStatus(`No se pudo actualizar: ${error.message}. Abrir el mapa con src/edit_server.py.`, "error");
+        setEditStatus("Reintentando con envio directo al servidor...", "");
+        submitCorrectionsForm(rows);
       } finally {
         button.disabled = false;
       }
@@ -848,6 +889,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     applyStoredCorrections();
     populateControls();
     updateEditedCount();
+    if (savedCount !== null) {
+      setEditStatus(`CSV y KMZ actualizados: ${savedCount} puntos.`, "ok");
+    }
     applyFilters({ fit: true });
   </script>
 </body>

@@ -3,6 +3,7 @@ from functools import partial
 import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from apply_location_corrections import apply_corrections
 from build_interactive_map import build_map
@@ -20,12 +21,25 @@ class EditHandler(SimpleHTTPRequestHandler):
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            body = self.rfile.read(length).decode("utf-8")
+            content_type = self.headers.get("Content-Type", "")
+            if "application/x-www-form-urlencoded" in content_type:
+                form = parse_qs(body)
+                payload = {"corrections": json.loads(form.get("corrections", ["[]"])[0])}
+                wants_redirect = True
+            else:
+                payload = json.loads(body)
+                wants_redirect = False
             corrections = payload.get("corrections", [])
             if not isinstance(corrections, list):
                 raise ValueError("El campo corrections debe ser una lista.")
             result = apply_corrections(self.csv_path, self.kmz_path, corrections)
             build_map(self.csv_path, self.html_path)
+            if wants_redirect:
+                self.send_response(303)
+                self.send_header("Location", f"/mapa_reclamos_interactivo.html?actualizado={result['updated']}")
+                self.end_headers()
+                return
             self.send_json({"ok": True, **result})
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, status=500)

@@ -73,6 +73,8 @@ El mapa permite corregir posiciones manualmente:
 
 - Presiona `Editar ubicaciones`.
 - Arrastra el punto mal ubicado hasta la posicion correcta.
+- Presiona `Terminar edicion`.
+- Presiona `Actualizar CSV/KMZ` para escribir las correcciones en los archivos.
 - Los cambios quedan guardados en el navegador con `localStorage`.
 - Usa `Exportar correcciones` para descargar un CSV con ticket, coordenadas originales y coordenadas corregidas.
 - Desde el panel de edicion tambien podes descargar GeoJSON, revertir puntos o borrar todas las correcciones locales.
