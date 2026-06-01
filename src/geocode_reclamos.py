@@ -38,6 +38,12 @@ def in_bounds(lat, lng, bounds):
     return bounds["lat_min"] <= lat <= bounds["lat_max"] and bounds["lng_min"] <= lng <= bounds["lng_max"]
 
 
+def display_value(value):
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value or "")
+
+
 def extract_coords(*texts, bounds):
     for text in texts:
         if not text:
@@ -103,14 +109,15 @@ def geocode(query, bounds):
 
 def placemark(row):
     description = (
-        f"<b>Ticket:</b> {escape(str(row.get('ticket') or ''))}<br/>"
-        f"<b>ID:</b> {escape(str(row.get('id') or ''))}<br/>"
-        f"<b>Estado:</b> {escape(str(row.get('estado') or ''))}<br/>"
-        f"<b>Problema:</b> {escape(str(row.get('problema') or ''))}<br/>"
-        f"<b>Direccion:</b> {escape(str(row.get('direccion') or ''))}<br/>"
-        f"<b>Fuente:</b> {escape(str(row.get('fuente') or ''))}"
+        f"<b>Ticket:</b> {escape(display_value(row.get('ticket')))}<br/>"
+        f"<b>ID:</b> {escape(display_value(row.get('id')))}<br/>"
+        f"<b>Estado:</b> {escape(display_value(row.get('estado')))}<br/>"
+        f"<b>Problema:</b> {escape(display_value(row.get('problema')))}<br/>"
+        f"<b>Direccion:</b> {escape(display_value(row.get('direccion')))}<br/>"
+        f"<b>Descripcion del reclamo:</b> {escape(display_value(row.get('descripcion')))}<br/>"
+        f"<b>Fuente:</b> {escape(display_value(row.get('fuente')))}"
     )
-    name = escape(f"Ticket {row.get('ticket')} - {row.get('direccion')}"[:120])
+    name = escape(display_value(row.get("ticket")) or "Sin ticket")
     return f"""
     <Placemark>
       <name>{name}</name>
@@ -191,6 +198,8 @@ def process(args):
             for query in candidates:
                 if not normalized_address:
                     continue
+                if query not in cache and args.no_geocode:
+                    continue
                 if query not in cache:
                     try:
                         cache[query] = geocode(query, bounds)
@@ -214,6 +223,7 @@ def process(args):
                 "estado": values[estado_idx],
                 "direccion": address,
                 "problema": values[problema_idx],
+                "descripcion": description,
                 "lat": lat if source else "",
                 "lng": lng if source else "",
                 "fuente": source or "No resuelto",
@@ -266,6 +276,7 @@ def build_parser():
     parser.add_argument("--province", default="Chaco")
     parser.add_argument("--country", default="Argentina")
     parser.add_argument("--delay", type=float, default=1.1, help="Pausa entre consultas a Nominatim.")
+    parser.add_argument("--no-geocode", action="store_true", help="No consulta Nominatim; usa solo Lat/Lng existentes, coordenadas embebidas y cache.")
     parser.add_argument("--lat-min", type=float, default=-27.55)
     parser.add_argument("--lat-max", type=float, default=-27.30)
     parser.add_argument("--lng-min", type=float, default=-59.10)

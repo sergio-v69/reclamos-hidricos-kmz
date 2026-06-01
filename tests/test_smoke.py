@@ -56,7 +56,12 @@ class SmokeTest(unittest.TestCase):
             self.assertIn('"geolocalizados": 1', result.stdout)
             with zipfile.ZipFile(kmz_path) as kmz:
                 kml = kmz.read("doc.kml").decode("utf-8")
+            self.assertIn("<name>1001</name>", kml)
+            self.assertNotIn("<name>1001.0</name>", kml)
+            self.assertNotIn("<name>Ticket 1001 - Roldan 1370</name>", kml)
             self.assertIn("-59.0091703,-27.4495123,0", kml)
+            self.assertIn("<b>Descripcion del reclamo:</b>", kml)
+            self.assertIn("La zanja esta tapada -27.449512300000;-59.009170300000", kml)
 
 
 if __name__ == "__main__":
