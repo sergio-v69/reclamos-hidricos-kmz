@@ -60,6 +60,7 @@ class InteractiveMapTest(unittest.TestCase):
             self.assertIn("Actualizar CSV/KMZ", html)
             self.assertIn("draggable: editMode", html)
             self.assertIn("/api/apply-corrections", html)
+            self.assertIn("XMLHttpRequest", html)
             self.assertIn("correcciones_ubicacion_reclamos.csv", html)
             self.assertNotIn('/[",\n', html)
             self.assertIn('lines.join("\\n")', html)

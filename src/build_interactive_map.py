@@ -718,6 +718,45 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       );
     }
 
+    function postJson(url, payload) {
+      const body = JSON.stringify(payload);
+      const parsePayload = text => {
+        try {
+          return JSON.parse(text);
+        } catch (error) {
+          throw new Error(text || "Respuesta invalida del servidor.");
+        }
+      };
+      const postWithXhr = () => new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onload = () => {
+          try {
+            const data = parsePayload(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+            else reject(new Error(data.error || `HTTP ${xhr.status}`));
+          } catch (error) {
+            reject(error);
+          }
+        };
+        xhr.onerror = () => reject(new Error("No se pudo conectar con el servidor editable."));
+        xhr.send(body);
+      });
+      if (typeof fetch !== "function") return postWithXhr();
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      })
+        .then(async response => {
+          const payload = parsePayload(await response.text());
+          if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+          return payload;
+        })
+        .catch(() => postWithXhr());
+    }
+
     async function applyCorrectionsToFiles() {
       const rows = correctionsRows();
       if (!rows.length) {
@@ -728,13 +767,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       button.disabled = true;
       setEditStatus("Actualizando CSV y KMZ...", "");
       try {
-        const response = await fetch("/api/apply-corrections", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ corrections: rows })
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) {
+        const payload = await postJson("/api/apply-corrections", { corrections: rows });
+        if (!payload.ok) {
           throw new Error(payload.error || "No se pudieron guardar las correcciones.");
         }
         const updatedKeys = new Set(rows.map(row => ticketKey(row)));
