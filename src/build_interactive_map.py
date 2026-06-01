@@ -434,6 +434,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const markersLayer = L.layerGroup().addTo(map);
     const markerByIndex = new Map();
     const STORAGE_KEY = "reclamos_hidricos_location_edits_v1";
+    const SERVER_ORIGIN = window.location.protocol.startsWith("http")
+      ? window.location.origin
+      : "http://127.0.0.1:8765";
+    const APPLY_ENDPOINT = `${SERVER_ORIGIN}/api/apply-corrections`;
     const savedCount = new URLSearchParams(window.location.search).get("actualizado");
     if (savedCount !== null) {
       localStorage.removeItem(STORAGE_KEY);
@@ -782,7 +786,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function submitCorrectionsForm(rows) {
       const form = document.createElement("form");
       form.method = "POST";
-      form.action = "/api/apply-corrections";
+      form.action = APPLY_ENDPOINT;
       form.style.display = "none";
       const input = document.createElement("input");
       input.type = "hidden";
@@ -807,7 +811,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       button.disabled = true;
       setEditStatus("Actualizando CSV y KMZ...", "");
       try {
-        const payload = await postJson("/api/apply-corrections", { corrections: rows });
+        const payload = await postJson(APPLY_ENDPOINT, { corrections: rows });
         if (!payload.ok) {
           throw new Error(payload.error || "No se pudieron guardar las correcciones.");
         }
