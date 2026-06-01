@@ -69,6 +69,14 @@ python src/build_interactive_map.py outputs/reclamos_hidricos_geolocalizados.csv
 
 El HTML resultante se puede abrir en el navegador. Usa Leaflet y OpenStreetMap para mostrar el mapa.
 
+El mapa permite corregir posiciones manualmente:
+
+- Presiona `Editar ubicaciones`.
+- Arrastra el punto mal ubicado hasta la posicion correcta.
+- Los cambios quedan guardados en el navegador con `localStorage`.
+- Usa `Exportar correcciones` para descargar un CSV con ticket, coordenadas originales y coordenadas corregidas.
+- Desde el panel de edicion tambien podes descargar GeoJSON, revertir puntos o borrar todas las correcciones locales.
+
 ## Precision
 
 La geolocalizacion automatica no siempre encuentra direcciones informales como manzana/parcela, barrios sin altura, intersecciones ambiguas o textos incompletos. Por eso el script solo genera puntos cuando encuentra una coordenada dentro del area configurada para Resistencia, Chaco.

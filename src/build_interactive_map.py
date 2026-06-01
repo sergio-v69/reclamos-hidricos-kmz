@@ -82,6 +82,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-size: 13px;
       cursor: pointer;
     }
+    .toolbar button.active {
+      background: #f59e0b;
+      color: #111827;
+      border-color: #fbbf24;
+    }
     .main {
       min-height: 0;
       display: grid;
@@ -214,6 +219,59 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border: 2px solid white;
       box-shadow: 0 1px 5px rgba(0,0,0,0.45);
     }
+    .marker-dot.edited {
+      outline: 3px solid #facc15;
+      outline-offset: 1px;
+    }
+    .edit-panel {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 1000;
+      width: min(330px, calc(100% - 24px));
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+      padding: 10px;
+      font-size: 12px;
+      color: #334155;
+      display: none;
+    }
+    .edit-panel.visible {
+      display: block;
+    }
+    .edit-panel h2 {
+      margin: 0 0 7px;
+      font-size: 14px;
+      color: #14213d;
+    }
+    .edit-panel p {
+      margin: 5px 0;
+      line-height: 1.35;
+    }
+    .edit-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .edit-actions button,
+    .popup-actions button {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #f8fafc;
+      color: #1f2933;
+      height: 30px;
+      padding: 0 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .edit-actions button.primary {
+      background: #184e77;
+      color: #fff;
+      border-color: #184e77;
+    }
     .leaflet-popup-content-wrapper {
       border-radius: 6px;
     }
@@ -241,6 +299,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       max-height: 150px;
       overflow: auto;
       white-space: pre-wrap;
+    }
+    .popup-coords {
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      color: #475569;
+    }
+    .popup-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
     }
     @media (max-width: 820px) {
       body { overflow: auto; }
@@ -282,6 +351,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <option value="">Todas las fuentes</option>
         </select>
         <input id="searchInput" type="search" placeholder="Buscar ticket, direccion o descripcion" aria-label="Buscar" />
+        <button id="editButton" type="button">Editar ubicaciones</button>
+        <button id="exportButton" type="button">Exportar correcciones</button>
         <button id="fitButton" type="button">Ver todos</button>
       </div>
     </header>
@@ -303,7 +374,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <section id="results" class="results" aria-label="Resultados"></section>
       </aside>
-      <div id="map"></div>
+      <div style="position:relative;min-width:0;min-height:0;">
+        <div id="map"></div>
+        <section id="editPanel" class="edit-panel" aria-live="polite">
+          <h2>Edicion de ubicaciones</h2>
+          <p>Activa el modo edicion y arrastra un punto para corregir su posicion. Los cambios quedan guardados en este navegador.</p>
+          <p><b id="editedCount">0</b> puntos corregidos.</p>
+          <div class="edit-actions">
+            <button id="downloadCorrections" class="primary" type="button">Descargar CSV</button>
+            <button id="downloadGeojson" type="button">Descargar GeoJSON</button>
+            <button id="clearCorrections" type="button">Borrar cambios</button>
+            <button id="closeEditPanel" type="button">Cerrar</button>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
   <script>
@@ -329,6 +413,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     const markersLayer = L.layerGroup().addTo(map);
     const markerByIndex = new Map();
+    const STORAGE_KEY = "reclamos_hidricos_location_edits_v1";
+    let corrections = loadCorrections();
+    let editMode = false;
     let visibleTickets = [];
 
     const estadoFilter = document.getElementById("estadoFilter");
@@ -336,6 +423,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const fuenteFilter = document.getElementById("fuenteFilter");
     const searchInput = document.getElementById("searchInput");
     const results = document.getElementById("results");
+    const editButton = document.getElementById("editButton");
+    const editPanel = document.getElementById("editPanel");
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -351,10 +440,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return COLORS[status || "Sin estado"] || DEFAULT_COLOR;
     }
 
-    function markerIcon(status) {
+    function ticketKey(ticket) {
+      return String(ticket.ticket || ticket.id || "");
+    }
+
+    function loadCorrections() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function saveCorrections() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(corrections));
+      updateEditedCount();
+    }
+
+    function applyStoredCorrections() {
+      TICKETS.forEach(ticket => {
+        const correction = corrections[ticketKey(ticket)];
+        if (correction) {
+          ticket.originalLat = ticket.originalLat ?? ticket.lat;
+          ticket.originalLng = ticket.originalLng ?? ticket.lng;
+          ticket.lat = correction.lat;
+          ticket.lng = correction.lng;
+          ticket.edited = true;
+          ticket.editedAt = correction.editedAt;
+        }
+      });
+    }
+
+    function markerIcon(status, edited = false) {
       return L.divIcon({
         className: "",
-        html: `<div class="marker-dot" style="background:${colorFor(status)}"></div>`,
+        html: `<div class="marker-dot ${edited ? "edited" : ""}" style="background:${colorFor(status)}"></div>`,
         iconSize: [18, 18],
         iconAnchor: [9, 9],
         popupAnchor: [0, -9]
@@ -362,6 +482,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function popupHtml(ticket) {
+      const original = ticket.edited
+        ? `<div class="popup-row popup-coords"><span class="popup-label">Original:</span> ${Number(ticket.originalLat).toFixed(6)}, ${Number(ticket.originalLng).toFixed(6)}</div>`
+        : "";
+      const edited = ticket.edited
+        ? `<div class="popup-row"><span class="popup-label">Correccion:</span> guardada</div>`
+        : "";
       return `<div class="popup">
         <h2>Ticket ${escapeHtml(ticket.ticket)}</h2>
         <div class="popup-row"><span class="popup-label">ID:</span> ${escapeHtml(ticket.id)}</div>
@@ -369,7 +495,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="popup-row"><span class="popup-label">Problema:</span> ${escapeHtml(ticket.problema)}</div>
         <div class="popup-row"><span class="popup-label">Direccion:</span> ${escapeHtml(ticket.direccion)}</div>
         <div class="popup-row"><span class="popup-label">Fuente:</span> ${escapeHtml(ticket.fuente)}</div>
+        <div class="popup-row popup-coords"><span class="popup-label">Actual:</span> ${Number(ticket.lat).toFixed(6)}, ${Number(ticket.lng).toFixed(6)}</div>
+        ${original}
+        ${edited}
         <div class="popup-description">${escapeHtml(ticket.descripcion)}</div>
+        <div class="popup-actions">
+          <button type="button" onclick="window.reclamosMap.copyCoords('${escapeHtml(ticketKey(ticket))}')">Copiar coordenadas</button>
+          ${ticket.edited ? `<button type="button" onclick="window.reclamosMap.undoEdit('${escapeHtml(ticketKey(ticket))}')">Revertir punto</button>` : ""}
+        </div>
       </div>`;
     }
 
@@ -424,8 +557,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       markersLayer.clearLayers();
       markerByIndex.clear();
       visibleTickets.forEach((ticket, listIndex) => {
-        const marker = L.marker([ticket.lat, ticket.lng], { icon: markerIcon(ticket.estado) })
+        const marker = L.marker([ticket.lat, ticket.lng], {
+          icon: markerIcon(ticket.estado, ticket.edited),
+          draggable: editMode
+        })
           .bindPopup(popupHtml(ticket));
+        marker.on("dragend", () => {
+          const pos = marker.getLatLng();
+          updateTicketLocation(ticket, pos.lat, pos.lng);
+          marker.setIcon(markerIcon(ticket.estado, true));
+          marker.bindPopup(popupHtml(ticket));
+          renderResults();
+        });
         marker.addTo(markersLayer);
         markerByIndex.set(listIndex, marker);
       });
@@ -439,7 +582,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         button.className = "ticket-row";
         button.type = "button";
         button.innerHTML = `<div class="ticket-main">
-          <span class="dot" style="background:${colorFor(ticket.estado)}"></span>
+          <span class="dot" style="background:${ticket.edited ? "#facc15" : colorFor(ticket.estado)}"></span>
           <span class="ticket-number">${escapeHtml(ticket.ticket)}</span>
           <span class="ticket-status">${escapeHtml(ticket.estado)}</span>
         </div>
@@ -466,6 +609,107 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById("resultSummary").textContent = `${visibleTickets.length} de ${TICKETS.length}`;
     }
 
+    function updateEditedCount() {
+      document.getElementById("editedCount").textContent = Object.keys(corrections).length;
+    }
+
+    function updateTicketLocation(ticket, lat, lng) {
+      if (ticket.originalLat === undefined) ticket.originalLat = ticket.lat;
+      if (ticket.originalLng === undefined) ticket.originalLng = ticket.lng;
+      ticket.lat = Number(lat);
+      ticket.lng = Number(lng);
+      ticket.edited = true;
+      ticket.editedAt = new Date().toISOString();
+      corrections[ticketKey(ticket)] = {
+        ticket: ticket.ticket,
+        id: ticket.id,
+        direccion: ticket.direccion,
+        estado: ticket.estado,
+        problema: ticket.problema,
+        originalLat: ticket.originalLat,
+        originalLng: ticket.originalLng,
+        lat: ticket.lat,
+        lng: ticket.lng,
+        editedAt: ticket.editedAt
+      };
+      saveCorrections();
+    }
+
+    function undoEditByKey(key) {
+      const ticket = TICKETS.find(item => ticketKey(item) === key);
+      if (!ticket || !corrections[key]) return;
+      ticket.lat = ticket.originalLat ?? corrections[key].originalLat;
+      ticket.lng = ticket.originalLng ?? corrections[key].originalLng;
+      ticket.edited = false;
+      delete ticket.editedAt;
+      delete corrections[key];
+      saveCorrections();
+      applyFilters({ fit: false });
+    }
+
+    function setEditMode(enabled) {
+      editMode = enabled;
+      editButton.classList.toggle("active", editMode);
+      editButton.textContent = editMode ? "Edicion activa" : "Editar ubicaciones";
+      editPanel.classList.toggle("visible", editMode);
+      renderMarkers();
+    }
+
+    function correctionsRows() {
+      return Object.values(corrections).sort((a, b) => String(a.ticket).localeCompare(String(b.ticket)));
+    }
+
+    function downloadText(filename, mimeType, text) {
+      const blob = new Blob([text], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      return /[",\\n\\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    function exportCorrectionsCsv() {
+      const rows = correctionsRows();
+      const header = ["ticket", "id", "direccion", "estado", "problema", "originalLat", "originalLng", "lat", "lng", "editedAt"];
+      const lines = [header.join(",")].concat(rows.map(row => header.map(key => csvEscape(row[key])).join(",")));
+      downloadText("correcciones_ubicacion_reclamos.csv", "text/csv;charset=utf-8", lines.join("\\n"));
+    }
+
+    function exportCorrectionsGeoJson() {
+      const features = correctionsRows().map(row => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [row.lng, row.lat] },
+        properties: row
+      }));
+      downloadText(
+        "correcciones_ubicacion_reclamos.geojson",
+        "application/geo+json;charset=utf-8",
+        JSON.stringify({ type: "FeatureCollection", features }, null, 2)
+      );
+    }
+
+    function clearCorrections() {
+      if (!confirm("Borrar todas las correcciones guardadas en este navegador?")) return;
+      corrections = {};
+      localStorage.removeItem(STORAGE_KEY);
+      TICKETS.forEach(ticket => {
+        if (ticket.originalLat !== undefined) ticket.lat = ticket.originalLat;
+        if (ticket.originalLng !== undefined) ticket.lng = ticket.originalLng;
+        ticket.edited = false;
+        delete ticket.editedAt;
+      });
+      updateEditedCount();
+      applyFilters({ fit: false });
+    }
+
     function fitVisible() {
       if (!visibleTickets.length) return;
       const bounds = L.latLngBounds(visibleTickets.map(ticket => [ticket.lat, ticket.lng]));
@@ -485,8 +729,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     });
     searchInput.addEventListener("input", () => applyFilters({ fit: true }));
     document.getElementById("fitButton").addEventListener("click", fitVisible);
+    editButton.addEventListener("click", () => setEditMode(!editMode));
+    document.getElementById("exportButton").addEventListener("click", exportCorrectionsCsv);
+    document.getElementById("downloadCorrections").addEventListener("click", exportCorrectionsCsv);
+    document.getElementById("downloadGeojson").addEventListener("click", exportCorrectionsGeoJson);
+    document.getElementById("clearCorrections").addEventListener("click", clearCorrections);
+    document.getElementById("closeEditPanel").addEventListener("click", () => setEditMode(false));
 
+    window.reclamosMap = {
+      copyCoords(key) {
+        const ticket = TICKETS.find(item => ticketKey(item) === key);
+        if (!ticket) return;
+        navigator.clipboard?.writeText(`${ticket.lat.toFixed(7)},${ticket.lng.toFixed(7)}`);
+      },
+      undoEdit: undoEditByKey,
+      exportCorrectionsCsv,
+      exportCorrectionsGeoJson
+    };
+
+    applyStoredCorrections();
     populateControls();
+    updateEditedCount();
     applyFilters({ fit: true });
   </script>
 </body>

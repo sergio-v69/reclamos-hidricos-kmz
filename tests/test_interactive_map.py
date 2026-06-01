@@ -56,6 +56,11 @@ class InteractiveMapTest(unittest.TestCase):
             self.assertIn('"ticket": "1001"', html)
             self.assertIn("La zanja esta tapada", html)
             self.assertIn("leaflet@1.9.4", html)
+            self.assertIn("Editar ubicaciones", html)
+            self.assertIn("draggable: editMode", html)
+            self.assertIn("correcciones_ubicacion_reclamos.csv", html)
+            self.assertNotIn('/[",\n', html)
+            self.assertIn('lines.join("\\n")', html)
 
 
 if __name__ == "__main__":
