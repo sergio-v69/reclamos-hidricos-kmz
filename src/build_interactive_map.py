@@ -272,6 +272,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: #fff;
       border-color: #184e77;
     }
+    .edit-actions button.wide {
+      grid-column: 1 / -1;
+    }
+    .edit-status {
+      min-height: 17px;
+      margin-top: 8px;
+      color: #475569;
+    }
+    .edit-status.error {
+      color: #b91c1c;
+    }
+    .edit-status.ok {
+      color: #166534;
+    }
     .leaflet-popup-content-wrapper {
       border-radius: 6px;
     }
@@ -381,11 +395,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <p>Activa el modo edicion y arrastra un punto para corregir su posicion. Los cambios quedan guardados en este navegador.</p>
           <p><b id="editedCount">0</b> puntos corregidos.</p>
           <div class="edit-actions">
+            <button id="applyCorrections" class="primary wide" type="button">Actualizar CSV/KMZ</button>
             <button id="downloadCorrections" class="primary" type="button">Descargar CSV</button>
             <button id="downloadGeojson" type="button">Descargar GeoJSON</button>
             <button id="clearCorrections" type="button">Borrar cambios</button>
             <button id="closeEditPanel" type="button">Cerrar</button>
           </div>
+          <div id="editStatus" class="edit-status"></div>
         </section>
       </div>
     </main>
@@ -425,6 +441,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const results = document.getElementById("results");
     const editButton = document.getElementById("editButton");
     const editPanel = document.getElementById("editPanel");
+    const editStatus = document.getElementById("editStatus");
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -613,6 +630,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById("editedCount").textContent = Object.keys(corrections).length;
     }
 
+    function setEditStatus(message, kind = "") {
+      editStatus.textContent = message;
+      editStatus.className = `edit-status ${kind}`.trim();
+    }
+
     function updateTicketLocation(ticket, lat, lng) {
       if (ticket.originalLat === undefined) ticket.originalLat = ticket.lat;
       if (ticket.originalLng === undefined) ticket.originalLng = ticket.lng;
@@ -696,6 +718,46 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       );
     }
 
+    async function applyCorrectionsToFiles() {
+      const rows = correctionsRows();
+      if (!rows.length) {
+        setEditStatus("No hay correcciones para guardar.", "error");
+        return;
+      }
+      const button = document.getElementById("applyCorrections");
+      button.disabled = true;
+      setEditStatus("Actualizando CSV y KMZ...", "");
+      try {
+        const response = await fetch("/api/apply-corrections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ corrections: rows })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "No se pudieron guardar las correcciones.");
+        }
+        const updatedKeys = new Set(rows.map(row => ticketKey(row)));
+        corrections = {};
+        localStorage.removeItem(STORAGE_KEY);
+        TICKETS.forEach(ticket => {
+          if (!updatedKeys.has(ticketKey(ticket))) return;
+          ticket.originalLat = ticket.lat;
+          ticket.originalLng = ticket.lng;
+          ticket.edited = false;
+          delete ticket.editedAt;
+          if (ticket.fuente) ticket.fuente = "Correccion manual";
+        });
+        updateEditedCount();
+        applyFilters({ fit: false });
+        setEditStatus(`CSV y KMZ actualizados: ${payload.updated} puntos.`, "ok");
+      } catch (error) {
+        setEditStatus(`No se pudo actualizar: ${error.message}. Abrir el mapa con src/edit_server.py.`, "error");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function clearCorrections() {
       if (!confirm("Borrar todas las correcciones guardadas en este navegador?")) return;
       corrections = {};
@@ -731,6 +793,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById("fitButton").addEventListener("click", fitVisible);
     editButton.addEventListener("click", () => setEditMode(!editMode));
     document.getElementById("exportButton").addEventListener("click", exportCorrectionsCsv);
+    document.getElementById("applyCorrections").addEventListener("click", applyCorrectionsToFiles);
     document.getElementById("downloadCorrections").addEventListener("click", exportCorrectionsCsv);
     document.getElementById("downloadGeojson").addEventListener("click", exportCorrectionsGeoJson);
     document.getElementById("clearCorrections").addEventListener("click", clearCorrections);
@@ -743,6 +806,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         navigator.clipboard?.writeText(`${ticket.lat.toFixed(7)},${ticket.lng.toFixed(7)}`);
       },
       undoEdit: undoEditByKey,
+      applyCorrectionsToFiles,
       exportCorrectionsCsv,
       exportCorrectionsGeoJson
     };

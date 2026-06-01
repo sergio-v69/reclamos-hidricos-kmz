@@ -77,6 +77,14 @@ El mapa permite corregir posiciones manualmente:
 - Usa `Exportar correcciones` para descargar un CSV con ticket, coordenadas originales y coordenadas corregidas.
 - Desde el panel de edicion tambien podes descargar GeoJSON, revertir puntos o borrar todas las correcciones locales.
 
+Para que el boton `Actualizar CSV/KMZ` escriba en disco, inicia el servidor editable en lugar de un servidor estatico:
+
+```bash
+python src/edit_server.py
+```
+
+Luego abre `http://127.0.0.1:8765/mapa_reclamos_interactivo.html`. Al presionar `Actualizar CSV/KMZ`, el servidor aplica las correcciones guardadas al CSV y regenera el KMZ.
+
 ## Precision
 
 La geolocalizacion automatica no siempre encuentra direcciones informales como manzana/parcela, barrios sin altura, intersecciones ambiguas o textos incompletos. Por eso el script solo genera puntos cuando encuentra una coordenada dentro del area configurada para Resistencia, Chaco.
