@@ -58,6 +58,19 @@ def load_address_corrections(path):
     return data
 
 
+def is_cached_error(value):
+    return isinstance(value, dict) and value.get("error")
+
+
+def user_facing_geocode_error(error):
+    message = str(error)
+    if "HTTP Error 503" in message or "Service Unavailable" in message:
+        return "El servicio externo de geolocalizacion no esta disponible ahora. Reintente en unos minutos."
+    if "HTTP Error 429" in message:
+        return "El servicio externo limito las consultas por exceso de uso. Espere unos minutos y reintente."
+    return message
+
+
 def test_geocode_address(address, cache_path, bounds=None):
     bounds = bounds or {
         "lat_min": -27.55,
@@ -72,19 +85,34 @@ def test_geocode_address(address, cache_path, bounds=None):
     cache_path = Path(cache_path)
     cache = load_json(cache_path, {})
     query = f"{address}, Resistencia, Chaco, Argentina"
+    if is_cached_error(cache.get(query)):
+        cache.pop(query, None)
+        save_json(cache_path, cache)
     from_cache = query in cache
     if not from_cache:
         try:
             cache[query] = geocode(query, bounds)
         except Exception as exc:
-            cache[query] = {"error": str(exc)}
+            return {
+                "found": False,
+                "query": query,
+                "from_cache": False,
+                "temporary_error": True,
+                "message": user_facing_geocode_error(exc),
+            }
         save_json(cache_path, cache)
 
     cached = cache.get(query)
     if not cached:
         return {"found": False, "query": query, "from_cache": from_cache, "message": "No se encontro una ubicacion."}
-    if isinstance(cached, dict) and cached.get("error"):
-        return {"found": False, "query": query, "from_cache": from_cache, "error": cached["error"]}
+    if is_cached_error(cached):
+        return {
+            "found": False,
+            "query": query,
+            "from_cache": from_cache,
+            "temporary_error": True,
+            "message": user_facing_geocode_error(cached["error"]),
+        }
 
     lat = parse_number(cached.get("lat"))
     lng = parse_number(cached.get("lng"))
@@ -166,11 +194,15 @@ def geocode_corrected_addresses(
         row["nota_correccion"] = correction.get("note", "")
         query = f"{correction['correctedAddress']}, Resistencia, Chaco, Argentina"
         attempted += 1
+        if is_cached_error(cache.get(query)):
+            cache.pop(query, None)
+            save_json(cache_path, cache)
         if query not in cache:
             try:
                 cache[query] = geocode(query, bounds)
             except Exception as exc:
-                cache[query] = {"error": str(exc)}
+                cache.pop(query, None)
+                print(f"No se pudo geolocalizar '{query}': {user_facing_geocode_error(exc)}")
             save_json(cache_path, cache)
             time.sleep(delay)
         cached = cache.get(query)
