@@ -58,6 +58,50 @@ def load_address_corrections(path):
     return data
 
 
+def test_geocode_address(address, cache_path, bounds=None):
+    bounds = bounds or {
+        "lat_min": -27.55,
+        "lat_max": -27.30,
+        "lng_min": -59.10,
+        "lng_max": -58.85,
+    }
+    address = str(address or "").strip()
+    if not address:
+        raise ValueError("Ingrese una direccion corregida para probar.")
+
+    cache_path = Path(cache_path)
+    cache = load_json(cache_path, {})
+    query = f"{address}, Resistencia, Chaco, Argentina"
+    from_cache = query in cache
+    if not from_cache:
+        try:
+            cache[query] = geocode(query, bounds)
+        except Exception as exc:
+            cache[query] = {"error": str(exc)}
+        save_json(cache_path, cache)
+
+    cached = cache.get(query)
+    if not cached:
+        return {"found": False, "query": query, "from_cache": from_cache, "message": "No se encontro una ubicacion."}
+    if isinstance(cached, dict) and cached.get("error"):
+        return {"found": False, "query": query, "from_cache": from_cache, "error": cached["error"]}
+
+    lat = parse_number(cached.get("lat"))
+    lng = parse_number(cached.get("lng"))
+    if lat is None or lng is None or not in_bounds(lat, lng, bounds):
+        return {"found": False, "query": query, "from_cache": from_cache, "message": "La ubicacion queda fuera del area esperada."}
+
+    return {
+        "found": True,
+        "query": query,
+        "from_cache": from_cache,
+        "lat": lat,
+        "lng": lng,
+        "display_name": cached.get("display_name", ""),
+        "importance": cached.get("importance"),
+    }
+
+
 def write_unresolved(rows, unresolved_csv, corrections):
     unresolved_csv = Path(unresolved_csv)
     unresolved_csv.parent.mkdir(parents=True, exist_ok=True)

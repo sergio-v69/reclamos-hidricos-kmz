@@ -74,10 +74,12 @@ class AddressNormalizerTest(unittest.TestCase):
             self.assertIn('"tickets": 1', result.stdout)
             self.assertIn("Normalizar direcciones pendientes", html)
             self.assertIn("Editar ticket", html)
+            self.assertIn("Probar geolocalizacion", html)
             self.assertIn("Guardar correcciones", html)
             self.assertIn("Geolocalizar corregidas", html)
             self.assertIn("/api/address-corrections", html)
             self.assertIn("/api/geocode-corrected-addresses", html)
+            self.assertIn("/api/test-geocode", html)
             self.assertIn("Leandro N Alem 2900", html)
             self.assertIn("Referencia frente a plaza", html)
 

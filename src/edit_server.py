@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from address_correction_geocoder import geocode_corrected_addresses, save_address_corrections
+from address_correction_geocoder import geocode_corrected_addresses, save_address_corrections, test_geocode_address
 from apply_location_corrections import apply_corrections
 from build_address_normalizer import build_normalizer
 from build_interactive_map import build_map
@@ -32,6 +32,9 @@ class EditHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/geocode-corrected-addresses":
             self.handle_geocode_corrected_addresses()
+            return
+        if self.path == "/api/test-geocode":
+            self.handle_test_geocode()
             return
         self.send_error(404, "No encontrado")
 
@@ -93,13 +96,26 @@ class EditHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, status=500)
 
+    def handle_test_geocode(self):
+        try:
+            payload, _wants_redirect = self.read_payload()
+            result = test_geocode_address(payload.get("address", ""), self.geocode_cache_path)
+            self.send_json({"ok": True, **result})
+        except Exception as exc:
+            self.send_json({"ok": False, "error": str(exc)}, status=500)
+
     def redirect(self, location):
         self.send_response(303)
         self.send_header("Location", location)
         self.end_headers()
 
     def do_OPTIONS(self):
-        if self.path not in {"/api/apply-corrections", "/api/address-corrections", "/api/geocode-corrected-addresses"}:
+        if self.path not in {
+            "/api/apply-corrections",
+            "/api/address-corrections",
+            "/api/geocode-corrected-addresses",
+            "/api/test-geocode",
+        }:
             self.send_error(404, "No encontrado")
             return
         self.send_response(204)

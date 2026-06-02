@@ -224,6 +224,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="section"><label class="label" for="note">Nota interna</label><textarea id="note" placeholder="Motivo, referencia barrial, aclaracion..." readonly>${escapeHtml(correction.note || "")}</textarea></div>
         <div class="actions">
           <button id="editCurrent" type="button">Editar ticket</button>
+          <button id="testGeocode" type="button">Probar geolocalizacion</button>
           <button id="saveCurrent" class="primary" type="button">Guardar este ticket</button>
           <button id="clearCurrent" class="danger" type="button">Borrar correccion</button>
         </div>
@@ -234,6 +235,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById("correctedAddress").focus();
         setEditorStatus("Edicion activa para este ticket.", "ok");
       });
+      document.getElementById("testGeocode").addEventListener("click", testCurrentGeocode);
       document.getElementById("saveCurrent").addEventListener("click", () => {
         updateCurrentFromInputs({ rerenderList: true });
         setEditing(false);
@@ -269,6 +271,45 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (!node) return;
       node.textContent = message;
       node.className = `status ${kind}`.trim();
+    }
+
+    function testCurrentGeocode() {
+      const address = document.getElementById("correctedAddress")?.value.trim() || "";
+      if (!address) {
+        setEditorStatus("Primero ingresa una direccion corregida.", "error");
+        return;
+      }
+      updateCurrentFromInputs();
+      const button = document.getElementById("testGeocode");
+      button.disabled = true;
+      setEditorStatus("Probando geolocalizacion...", "");
+      const request = new XMLHttpRequest();
+      request.open("POST", "/api/test-geocode", true);
+      request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+      request.onload = () => {
+        button.disabled = false;
+        try {
+          const result = JSON.parse(request.responseText || "{}");
+          if (!result.ok) {
+            setEditorStatus(`No se pudo probar: ${result.error || "error desconocido"}`, "error");
+            return;
+          }
+          if (!result.found) {
+            setEditorStatus(result.message || result.error || "No se encontro una ubicacion.", "error");
+            return;
+          }
+          const cacheText = result.from_cache ? "cache" : "Nominatim";
+          const place = result.display_name ? ` - ${result.display_name}` : "";
+          setEditorStatus(`Encontrada: ${result.lat}, ${result.lng} (${cacheText})${place}`, "ok");
+        } catch (error) {
+          setEditorStatus("No se pudo interpretar la respuesta del servidor.", "error");
+        }
+      };
+      request.onerror = () => {
+        button.disabled = false;
+        setEditorStatus("No se pudo conectar con el servidor editable.", "error");
+      };
+      request.send(JSON.stringify({ address }));
     }
 
     function updateCounts() {
