@@ -1,5 +1,6 @@
 import argparse
 import csv
+import datetime as dt
 import json
 import re
 import time
@@ -42,6 +43,14 @@ def display_value(value):
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value or "")
+
+
+def display_date(value):
+    if isinstance(value, dt.datetime):
+        return value.isoformat(sep=" ", timespec="minutes")
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    return display_value(value)
 
 
 def extract_coords(*texts, bounds):
@@ -111,6 +120,7 @@ def placemark(row):
     description = (
         f"<b>Ticket:</b> {escape(display_value(row.get('ticket')))}<br/>"
         f"<b>ID:</b> {escape(display_value(row.get('id')))}<br/>"
+        f"<b>Fecha:</b> {escape(display_value(row.get('fecha')))}<br/>"
         f"<b>Estado:</b> {escape(display_value(row.get('estado')))}<br/>"
         f"<b>Problema:</b> {escape(display_value(row.get('problema')))}<br/>"
         f"<b>Direccion:</b> {escape(display_value(row.get('direccion')))}<br/>"
@@ -132,6 +142,13 @@ def find_header(headers, name):
     except ValueError as exc:
         available = ", ".join(str(header) for header in headers if header)
         raise SystemExit(f"No se encontro la columna '{name}'. Columnas disponibles: {available}") from exc
+
+
+def find_optional_header(headers, name):
+    try:
+        return headers.index(name)
+    except ValueError:
+        return None
 
 
 def load_cache(path):
@@ -164,6 +181,7 @@ def process(args):
     id_idx = find_header(headers, args.id_column)
     ticket_idx = find_header(headers, args.ticket_column)
     estado_idx = find_header(headers, args.status_column)
+    date_idx = find_optional_header(headers, args.date_column)
     address_idx = find_header(headers, args.address_column)
     problema_idx = find_header(headers, args.issue_column)
     description_idx = find_header(headers, args.description_column)
@@ -220,6 +238,7 @@ def process(args):
                 "excel_row": excel_row,
                 "id": values[id_idx],
                 "ticket": ticket,
+                "fecha": display_date(values[date_idx]) if date_idx is not None else "",
                 "estado": values[estado_idx],
                 "direccion": address,
                 "problema": values[problema_idx],
@@ -284,6 +303,7 @@ def build_parser():
     parser.add_argument("--id-column", default="ID")
     parser.add_argument("--ticket-column", default="Nº")
     parser.add_argument("--status-column", default="Estado")
+    parser.add_argument("--date-column", default="Fecha")
     parser.add_argument("--address-column", default="Dirección del Ticket")
     parser.add_argument("--issue-column", default="Problema")
     parser.add_argument("--description-column", default="Descripción")

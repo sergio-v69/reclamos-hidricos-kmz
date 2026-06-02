@@ -6,6 +6,7 @@ Herramienta en Python para leer una planilla de reclamos, detectar direcciones y
 
 - Lee una planilla `.xlsx` con columnas como `ID`, `Nº`, `Estado`, `Dirección del Ticket`, `Problema`, `Descripción`, `Lat` y `Lng`.
 - Usa coordenadas existentes si ya estan en `Lat`/`Lng`.
+- Conserva la columna `Fecha` para filtrar tickets por periodo en el mapa.
 - Extrae coordenadas escritas dentro de la descripcion, por ejemplo `-27.449512300000;-59.009170300000`.
 - Consulta Nominatim para direcciones sin coordenadas.
 - Genera:
@@ -61,7 +62,7 @@ Abre `outputs/reclamos_hidricos_geolocalizados.kmz` en Google Earth Pro o Google
 
 ## Mapa interactivo
 
-Despues de generar el CSV geolocalizado, podes crear un mapa HTML interactivo con filtros, busqueda y popups:
+Despues de generar el CSV geolocalizado, podes crear un mapa HTML interactivo con filtros por estado, problema, fuente, rango de fechas, busqueda y popups:
 
 ```bash
 python src/build_interactive_map.py outputs/reclamos_hidricos_geolocalizados.csv outputs/mapa_reclamos_interactivo.html

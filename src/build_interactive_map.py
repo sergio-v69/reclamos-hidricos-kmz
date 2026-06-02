@@ -72,6 +72,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .toolbar input {
       width: 230px;
     }
+    .date-field {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #d8e8f5;
+      font-size: 12px;
+    }
+    .toolbar .date-field input {
+      width: 140px;
+      min-width: 140px;
+    }
     .toolbar button {
       height: 32px;
       border: 1px solid rgba(255,255,255,0.35);
@@ -368,6 +379,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <select id="fuenteFilter" aria-label="Filtrar por fuente">
           <option value="">Todas las fuentes</option>
         </select>
+        <label class="date-field">Desde <input id="dateFrom" type="date" aria-label="Fecha desde" /></label>
+        <label class="date-field">Hasta <input id="dateTo" type="date" aria-label="Fecha hasta" /></label>
         <input id="searchInput" type="search" placeholder="Buscar ticket, direccion o descripcion" aria-label="Buscar" />
         <button id="editButton" type="button">Editar ubicaciones</button>
         <button id="exportButton" type="button">Exportar correcciones</button>
@@ -450,6 +463,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const estadoFilter = document.getElementById("estadoFilter");
     const problemaFilter = document.getElementById("problemaFilter");
     const fuenteFilter = document.getElementById("fuenteFilter");
+    const dateFrom = document.getElementById("dateFrom");
+    const dateTo = document.getElementById("dateTo");
     const searchInput = document.getElementById("searchInput");
     const results = document.getElementById("results");
     const editButton = document.getElementById("editButton");
@@ -468,6 +483,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function colorFor(status) {
       return COLORS[status || "Sin estado"] || DEFAULT_COLOR;
+    }
+
+    function dateOnly(value) {
+      const text = String(value || "").trim();
+      const match = text.match(/^\\d{4}-\\d{2}-\\d{2}/);
+      return match ? match[0] : "";
     }
 
     function ticketKey(ticket) {
@@ -521,6 +542,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return `<div class="popup">
         <h2>Ticket ${escapeHtml(ticket.ticket)}</h2>
         <div class="popup-row"><span class="popup-label">ID:</span> ${escapeHtml(ticket.id)}</div>
+        <div class="popup-row"><span class="popup-label">Fecha:</span> ${escapeHtml(ticket.fecha)}</div>
         <div class="popup-row"><span class="popup-label">Estado:</span> ${escapeHtml(ticket.estado)}</div>
         <div class="popup-row"><span class="popup-label">Problema:</span> ${escapeHtml(ticket.problema)}</div>
         <div class="popup-row"><span class="popup-label">Direccion:</span> ${escapeHtml(ticket.direccion)}</div>
@@ -566,14 +588,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const estado = estadoFilter.value;
       const problema = problemaFilter.value;
       const fuente = fuenteFilter.value;
+      const from = dateFrom.value;
+      const to = dateTo.value;
+      const ticketDate = dateOnly(ticket.fecha);
       const search = searchInput.value.trim().toLowerCase();
       if (estado && (ticket.estado || "Sin estado") !== estado) return false;
       if (problema && (ticket.problema || "Sin problema") !== problema) return false;
       if (fuente && (ticket.fuente || "Sin fuente") !== fuente) return false;
+      if (from && (!ticketDate || ticketDate < from)) return false;
+      if (to && (!ticketDate || ticketDate > to)) return false;
       if (!search) return true;
       const haystack = [
         ticket.ticket,
         ticket.id,
+        ticket.fecha,
         ticket.estado,
         ticket.problema,
         ticket.direccion,
@@ -868,6 +896,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     [estadoFilter, problemaFilter, fuenteFilter].forEach(select => {
       select.addEventListener("change", () => applyFilters({ fit: true }));
     });
+    [dateFrom, dateTo].forEach(input => {
+      input.addEventListener("change", () => applyFilters({ fit: true }));
+    });
     searchInput.addEventListener("input", () => applyFilters({ fit: true }));
     document.getElementById("fitButton").addEventListener("click", fitVisible);
     editButton.addEventListener("click", () => setEditMode(!editMode));
@@ -923,6 +954,7 @@ def build_map(input_csv, output_html):
                 {
                     "id": clean_value(row.get("id")),
                     "ticket": clean_value(row.get("ticket")),
+                    "fecha": clean_value(row.get("fecha")),
                     "estado": clean_value(row.get("estado")) or "Sin estado",
                     "direccion": clean_value(row.get("direccion")),
                     "problema": clean_value(row.get("problema")) or "Sin problema",

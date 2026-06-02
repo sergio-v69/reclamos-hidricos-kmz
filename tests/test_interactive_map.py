@@ -18,6 +18,7 @@ class InteractiveMapTest(unittest.TestCase):
                     fieldnames=[
                         "id",
                         "ticket",
+                        "fecha",
                         "estado",
                         "direccion",
                         "problema",
@@ -32,6 +33,7 @@ class InteractiveMapTest(unittest.TestCase):
                     {
                         "id": "1",
                         "ticket": "1001",
+                        "fecha": "2026-04-15 15:15",
                         "estado": "Pendiente",
                         "direccion": "Roldan 1370",
                         "problema": "Caños de zanja obstruido",
@@ -54,6 +56,9 @@ class InteractiveMapTest(unittest.TestCase):
             self.assertIn('"tickets": 1', result.stdout)
             self.assertIn("Mapa de Reclamos Hidricos", html)
             self.assertIn('"ticket": "1001"', html)
+            self.assertIn('"fecha": "2026-04-15 15:15"', html)
+            self.assertIn("dateFrom", html)
+            self.assertIn("dateTo", html)
             self.assertIn("La zanja esta tapada", html)
             self.assertIn("leaflet@1.9.4", html)
             self.assertIn("Editar ubicaciones", html)

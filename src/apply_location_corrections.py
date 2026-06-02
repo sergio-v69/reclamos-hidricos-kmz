@@ -15,6 +15,7 @@ def placemark(row):
     description = (
         f"<b>Ticket:</b> {escape(display_value(row.get('ticket')))}<br/>"
         f"<b>ID:</b> {escape(display_value(row.get('id')))}<br/>"
+        f"<b>Fecha:</b> {escape(display_value(row.get('fecha')))}<br/>"
         f"<b>Estado:</b> {escape(display_value(row.get('estado')))}<br/>"
         f"<b>Problema:</b> {escape(display_value(row.get('problema')))}<br/>"
         f"<b>Direccion:</b> {escape(display_value(row.get('direccion')))}<br/>"
