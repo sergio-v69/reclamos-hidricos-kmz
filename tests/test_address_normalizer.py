@@ -73,6 +73,7 @@ class AddressNormalizerTest(unittest.TestCase):
             html = html_path.read_text(encoding="utf-8")
             self.assertIn('"tickets": 1', result.stdout)
             self.assertIn("Normalizar direcciones pendientes", html)
+            self.assertIn("Editar ticket", html)
             self.assertIn("Guardar correcciones", html)
             self.assertIn("Geolocalizar corregidas", html)
             self.assertIn("/api/address-corrections", html)

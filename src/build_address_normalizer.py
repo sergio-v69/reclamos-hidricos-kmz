@@ -58,6 +58,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .value { min-height: 39px; white-space: pre-wrap; }
     textarea { min-height: 110px; resize: vertical; }
     .corrected-input { height: 38px; }
+    .corrected-input[readonly], textarea[readonly] { background: #eef2f6; color: #52616f; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .status { min-height: 20px; font-size: 12px; margin-top: 8px; color: #475569; }
     .status.ok { color: #166534; }
@@ -130,14 +131,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function loadCorrections() {
       try {
-        return { ...INITIAL_CORRECTIONS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") };
+        const stored = window.localStorage ? JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") : {};
+        return { ...INITIAL_CORRECTIONS, ...stored };
       } catch (error) {
         return { ...INITIAL_CORRECTIONS };
       }
     }
 
     function persistLocal() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(corrections));
+      try {
+        if (window.localStorage) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(corrections));
+        }
+      } catch (error) {
+        console.warn("No se pudo guardar el borrador local", error);
+      }
       updateCounts();
     }
 
@@ -145,7 +153,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return Object.values(corrections).filter(item => item.correctedAddress || item.note);
     }
 
-    function updateCurrentFromInputs() {
+    function updateCurrentFromInputs({ rerenderList = false } = {}) {
       if (!currentKey) return;
       const ticket = TICKETS.find(item => ticketKey(item) === currentKey);
       corrections[currentKey] = {
@@ -159,7 +167,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         delete corrections[currentKey];
       }
       persistLocal();
-      renderList();
+      if (rerenderList) renderList();
     }
 
     function matches(ticket) {
@@ -190,7 +198,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
       list.querySelectorAll("[data-key]").forEach(button => {
         button.addEventListener("click", () => {
-          updateCurrentFromInputs();
+          updateCurrentFromInputs({ rerenderList: true });
           currentKey = button.dataset.key;
           renderEditor();
           renderList();
@@ -212,15 +220,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="section"><span class="label">Direccion original</span><div class="value">${escapeHtml(ticket.direccion || "")}</div></div>
         <div class="section"><span class="label">Descripcion</span><div class="value">${escapeHtml(ticket.descripcion || "")}</div></div>
         <div class="section"><span class="label">Consultas sugeridas</span><div class="value">${escapeHtml(ticket.consulta_sugerida || "")}</div></div>
-        <div class="section"><label class="label" for="correctedAddress">Direccion corregida para geolocalizar</label><input id="correctedAddress" class="corrected-input" value="${escapeHtml(correction.correctedAddress || "")}" placeholder="Ej: Leandro N Alem 2900" /></div>
-        <div class="section"><label class="label" for="note">Nota interna</label><textarea id="note" placeholder="Motivo, referencia barrial, aclaracion...">${escapeHtml(correction.note || "")}</textarea></div>
+        <div class="section"><label class="label" for="correctedAddress">Direccion corregida para geolocalizar</label><input id="correctedAddress" class="corrected-input" value="${escapeHtml(correction.correctedAddress || "")}" placeholder="Ej: Leandro N Alem 2900" readonly /></div>
+        <div class="section"><label class="label" for="note">Nota interna</label><textarea id="note" placeholder="Motivo, referencia barrial, aclaracion..." readonly>${escapeHtml(correction.note || "")}</textarea></div>
         <div class="actions">
+          <button id="editCurrent" type="button">Editar ticket</button>
           <button id="saveCurrent" class="primary" type="button">Guardar este ticket</button>
           <button id="clearCurrent" class="danger" type="button">Borrar correccion</button>
         </div>
         <div id="editorStatus" class="status"></div>`;
+      setEditing(false);
+      document.getElementById("editCurrent").addEventListener("click", () => {
+        setEditing(true);
+        document.getElementById("correctedAddress").focus();
+        setEditorStatus("Edicion activa para este ticket.", "ok");
+      });
       document.getElementById("saveCurrent").addEventListener("click", () => {
-        updateCurrentFromInputs();
+        updateCurrentFromInputs({ rerenderList: true });
+        setEditing(false);
         setEditorStatus("Correccion guardada en esta sesion. Usa Guardar correcciones para escribirla en disco.", "ok");
       });
       document.getElementById("clearCurrent").addEventListener("click", () => {
@@ -232,6 +248,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ["correctedAddress", "note"].forEach(id => {
         document.getElementById(id).addEventListener("input", persistCurrentDraft);
       });
+    }
+
+    function setEditing(enabled) {
+      const corrected = document.getElementById("correctedAddress");
+      const note = document.getElementById("note");
+      const save = document.getElementById("saveCurrent");
+      if (!corrected || !note || !save) return;
+      corrected.readOnly = !enabled;
+      note.readOnly = !enabled;
+      save.disabled = !enabled;
     }
 
     function persistCurrentDraft() {
@@ -252,7 +278,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function submitForm(formId, payloadId) {
-      updateCurrentFromInputs();
+      updateCurrentFromInputs({ rerenderList: true });
       const rows = correctionRows();
       if (!rows.length) {
         alert("No hay direcciones corregidas para guardar.");
