@@ -14,9 +14,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <title>Normalizar direcciones pendientes</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
     body { font-family: Arial, Helvetica, sans-serif; color: #1f2933; background: #f4f7f9; }
-    .app { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .app { height: 100vh; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
     header {
       background: #184e77; color: white; padding: 12px 14px;
       display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 12px; align-items: center;
@@ -31,8 +31,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     button { cursor: pointer; background: #f8fafc; color: #184e77; }
     button.primary { background: #184e77; color: #fff; border-color: #184e77; }
     button.danger { color: #991b1b; }
-    .main { min-height: 0; display: grid; grid-template-columns: 390px 1fr; }
-    .list { min-height: 0; overflow: auto; background: #fff; border-right: 1px solid #d5dde5; }
+    .main { min-height: 0; overflow: hidden; display: grid; grid-template-columns: 390px minmax(0, 1fr); }
+    .list { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; background: #fff; border-right: 1px solid #d5dde5; }
     .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 10px; border-bottom: 1px solid #e5e7eb; }
     .stat { border: 1px solid #d9e2ec; border-radius: 6px; padding: 8px; background: #f8fbfd; }
     .stat b { display: block; font-size: 20px; color: #184e77; }
@@ -47,7 +47,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .ticket-number { font-weight: 700; color: #14213d; }
     .ticket-date, .ticket-status { font-size: 11px; color: #64748b; }
     .ticket-address { margin-top: 5px; font-size: 12px; line-height: 1.3; color: #405261; }
-    .editor { min-width: 0; padding: 14px; overflow: auto; }
+    .editor { height: 100%; min-width: 0; padding: 14px; overflow-y: auto; overflow-x: hidden; }
     .panel { max-width: 980px; margin: 0 auto; }
     .section { margin-bottom: 12px; }
     .label { display: block; font-size: 12px; font-weight: 700; color: #405261; margin-bottom: 5px; }
@@ -68,8 +68,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       header { grid-template-columns: 1fr; }
       .toolbar { justify-content: stretch; }
       .toolbar input, .toolbar select, .toolbar button { flex: 1 1 150px; }
-      .main { grid-template-columns: 1fr; }
-      .list { max-height: 42vh; border-right: 0; border-bottom: 1px solid #d5dde5; }
+      .main { grid-template-columns: 1fr; grid-template-rows: minmax(180px, 42vh) minmax(0, 1fr); }
+      .list { max-height: none; border-right: 0; border-bottom: 1px solid #d5dde5; }
     }
   </style>
 </head>
