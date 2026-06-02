@@ -30,6 +30,27 @@ class GeocodeMissingCsvTest(unittest.TestCase):
         queries = candidate_queries({"direccion": "Hermanos Pinzon y calle 1 de mayo", "descripcion": ""}, self.args())
         self.assertIn("Hermanos Pinzon y 1 de mayo, Resistencia, Chaco, Argentina", queries)
 
+    def test_extracts_height_from_description_when_address_is_empty(self):
+        queries = candidate_queries(
+            {
+                "direccion": "",
+                "descripcion": "Estamos inundados en el barrio, San salvador 655 palermo 2",
+            },
+            self.args(),
+        )
+        self.assertIn("San salvador 655, Resistencia, Chaco, Argentina", queries)
+
+    def test_extracts_street_from_description_with_mz_pc_address(self):
+        queries = candidate_queries(
+            {
+                "direccion": "MZ 63 PC 09",
+                "descripcion": "Bº 244 VIVIENDAS SERIA CALLE 17 ENTRE FORTIN LOMA NEGRA Y PJE FORTIN LOMA NEGRA",
+            },
+            self.args(),
+        )
+        joined = " | ".join(queries)
+        self.assertIn("17 y Fortin LOMA NEGRA", joined)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,14 +32,27 @@ def row_has_coords(row):
 
 
 def strip_block_lot_data(text):
+    text = re.sub(r"\bch\s*\d+\b", " ", text, flags=re.I)
+    text = re.sub(r"\bchacra\s*\d+\b", " ", text, flags=re.I)
+    text = re.sub(r"\blote\s*(?:rural)?\s*\d+\b", " ", text, flags=re.I)
     text = re.sub(r"\b(?:mz|mza|manzana|m)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
     text = re.sub(r"\b(?:pc|parcela|p)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
     text = re.sub(r"\b(?:casa|cs)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
     return re.sub(r"\s+", " ", text).strip(" .,-")
 
 
+def fix_common_text_issues(text):
+    text = re.sub(r"\bPP+asaje\b", "Pasaje", text, flags=re.I)
+    text = re.sub(r"\basaje\b", "Pasaje", text, flags=re.I)
+    text = re.sub(r"\bRISSIONE\b", "Rissione", text, flags=re.I)
+    text = re.sub(r"\bvelez\b", "Velez", text, flags=re.I)
+    text = re.sub(r"\bMac lean\b", "Mac Lean", text, flags=re.I)
+    text = re.sub(r"\bfortin\b", "Fortin", text, flags=re.I)
+    return text
+
+
 def normalize_street_name(text):
-    text = strip_block_lot_data(text)
+    text = fix_common_text_issues(strip_block_lot_data(text))
     text = re.sub(r"\b(?:calle|avda?|avenida|pje|pasaje)\b\.?", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text)
     return text.strip(" .,-")
@@ -74,11 +87,58 @@ def intersection_candidates(text):
     return [f"{first} y {second}", f"{first} esquina {second}", first, second]
 
 
+def compact_address_snippets(text):
+    text = fix_common_text_issues(strip_block_lot_data(clean_address(text, "")))
+    text = re.sub(r"[\n\r]+", " ", text)
+    snippets = []
+
+    street_prefix = r"(?:calle|av\.?|avenida|pje|pasaje)?"
+    street_name = r"[A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ0-9 .'-]{2,45}?"
+    height = r"(?:al\s+)?\d{1,4}"
+    for match in re.finditer(fr"\b{street_prefix}\s*{street_name}\s+{height}\b", text, flags=re.I):
+        snippets.append(match.group(0).strip(" .,-"))
+
+    for match in re.finditer(
+        fr"\b(?:direcci[oó]n|ubicaci[oó]n|domicilio)\s*:?\s*({street_prefix}\s*{street_name}(?:\s+{height})?)",
+        text,
+        flags=re.I,
+    ):
+        snippets.append(match.group(1).strip(" .,-"))
+
+    for match in re.finditer(
+        r"\bcalle\s+(\d{1,2})\s+entre\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})\s+y\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})",
+        text,
+        flags=re.I,
+    ):
+        street = f"Calle {match.group(1)}"
+        first_cross = normalize_street_name(match.group(2))
+        second_cross = normalize_street_name(match.group(3))
+        snippets.extend([f"{street} y {first_cross}", f"{street} y {second_cross}", street])
+
+    for match in re.finditer(
+        r"\b(?:calle\s+)?([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})\s+entre\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})\s+y\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})",
+        text,
+        flags=re.I,
+    ):
+        street = normalize_street_name(match.group(1))
+        first_cross = normalize_street_name(match.group(2))
+        second_cross = normalize_street_name(match.group(3))
+        snippets.extend([f"{street} y {first_cross}", f"{street} y {second_cross}", street])
+
+    for match in re.finditer(
+        r"\b(?:esquina(?:\s+de)?|intersecci[oó]n(?:\s+de)?|en)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})\s+y\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ .'-]{2,35})",
+        text,
+        flags=re.I,
+    ):
+        snippets.append(f"{normalize_street_name(match.group(1))} y {normalize_street_name(match.group(2))}")
+
+    return [snippet for snippet in snippets if len(snippet) <= 90]
+
+
 def expanded_address_values(row):
     values = [
         clean_address(row.get("direccion"), row.get("descripcion")),
         clean_address(row.get("direccion", ""), ""),
-        clean_address(row.get("descripcion"), ""),
     ]
     expanded = []
     for value in values:
@@ -88,6 +148,11 @@ def expanded_address_values(row):
         expanded.extend(intersection_candidates(value))
         cleaned = strip_block_lot_data(value)
         expanded.append(cleaned)
+    description = clean_address(row.get("descripcion"), "")
+    for snippet in compact_address_snippets(description):
+        expanded.extend(numbered_cross_street_candidates(snippet))
+        expanded.extend(intersection_candidates(snippet))
+        expanded.append(snippet)
     return expanded
 
 
