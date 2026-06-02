@@ -96,6 +96,18 @@ La geolocalizacion automatica no siempre encuentra direcciones informales como m
 
 Este proyecto usa el servicio publico de Nominatim con una pausa entre consultas. Para volumenes grandes o uso frecuente, conviene usar un proveedor propio o una API de geocodificacion con clave.
 
+## Geolocalizacion de faltantes
+
+Para trabajar sobre una copia del CSV y consultar solo tickets sin coordenadas:
+
+```bash
+python src/geocode_missing_csv.py outputs/reclamos_hidricos_geolocalizados.csv outputs/reclamos_hidricos_geolocalizados_copia.csv ^
+  --output-kmz outputs/reclamos_hidricos_geolocalizados_copia.kmz ^
+  --unresolved-csv outputs/reclamos_faltantes_sin_ubicacion.csv
+```
+
+El script aplica reglas adicionales para direcciones informales: calcula alturas desde calles numeradas (`calle 21` -> `2900`), ignora datos de manzana/parcela (`Mz`, `Pc`, `M`, `P`) e intenta intersecciones entre dos calles antes de dejar el ticket sin ubicacion.
+
 ## Estructura
 
 ```text

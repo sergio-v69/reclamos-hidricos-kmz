@@ -1,12 +1,17 @@
 import argparse
 import csv
 import json
+import re
 import shutil
 import time
 from pathlib import Path
 
-from apply_location_corrections import generate_kmz
-from geocode_reclamos import clean_address, extract_coords, geocode, in_bounds, parse_number
+try:
+    from apply_location_corrections import generate_kmz
+    from geocode_reclamos import clean_address, extract_coords, geocode, in_bounds, parse_number
+except ModuleNotFoundError:
+    from src.apply_location_corrections import generate_kmz
+    from src.geocode_reclamos import clean_address, extract_coords, geocode, in_bounds, parse_number
 
 
 def load_cache(path):
@@ -26,11 +31,69 @@ def row_has_coords(row):
     return parse_number(row.get("lat")) is not None and parse_number(row.get("lng")) is not None
 
 
+def strip_block_lot_data(text):
+    text = re.sub(r"\b(?:mz|mza|manzana|m)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
+    text = re.sub(r"\b(?:pc|parcela|p)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
+    text = re.sub(r"\b(?:casa|cs)\s*\.?\s*\d+[a-z]?\b", " ", text, flags=re.I)
+    return re.sub(r"\s+", " ", text).strip(" .,-")
+
+
+def normalize_street_name(text):
+    text = strip_block_lot_data(text)
+    text = re.sub(r"\b(?:calle|avda?|avenida|pje|pasaje)\b\.?", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" .,-")
+
+
+def numbered_cross_street_candidates(text):
+    clean = strip_block_lot_data(clean_address(text, ""))
+    pattern = re.compile(
+        r"(?P<street>.+?)\s+(?:y|esquina|entre)\s+(?:calle\s+|c\s*)?(?P<number>\d{1,2})\b",
+        flags=re.I,
+    )
+    match = pattern.search(clean)
+    if not match:
+        return []
+    street = normalize_street_name(match.group("street"))
+    if not street or street.lower().startswith(("calle ", "c ")):
+        return []
+    number = int(match.group("number"))
+    height = number * 100 + 800
+    return [f"{street} {height}", f"{street} al {height}"]
+
+
+def intersection_candidates(text):
+    clean = strip_block_lot_data(clean_address(text, ""))
+    parts = re.split(r"\s+(?:y|esquina|intersecci[oó]n(?:\s+calles)?|entre)\s+", clean, maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return []
+    first = normalize_street_name(parts[0])
+    second = normalize_street_name(re.split(r"\s+(?:hasta|entre|,|\.)\s*", parts[1], maxsplit=1, flags=re.I)[0])
+    if not first or not second:
+        return []
+    return [f"{first} y {second}", f"{first} esquina {second}", first, second]
+
+
+def expanded_address_values(row):
+    values = [
+        clean_address(row.get("direccion"), row.get("descripcion")),
+        clean_address(row.get("direccion", ""), ""),
+        clean_address(row.get("descripcion"), ""),
+    ]
+    expanded = []
+    for value in values:
+        if not value:
+            continue
+        expanded.extend(numbered_cross_street_candidates(value))
+        expanded.extend(intersection_candidates(value))
+        cleaned = strip_block_lot_data(value)
+        expanded.append(cleaned)
+    return expanded
+
+
 def candidate_queries(row, args):
-    address = clean_address(row.get("direccion"), row.get("descripcion"))
-    description_address = clean_address(row.get("descripcion"), "")
     candidates = []
-    for value in [address, row.get("direccion", ""), description_address]:
+    for value in expanded_address_values(row):
         value = clean_address(value, "")
         if not value:
             continue
