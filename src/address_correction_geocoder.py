@@ -34,12 +34,14 @@ def normalized_corrections(items):
             key = key[:-2]
         corrected = str(item.get("correctedAddress") or "").strip()
         note = str(item.get("note") or "").strip()
-        if key and (corrected or note):
+        needs_precision = bool(item.get("needsPrecision"))
+        if key and (corrected or note or needs_precision):
             corrections[key] = {
                 "ticket": key,
                 "id": str(item.get("id") or "").strip(),
                 "correctedAddress": corrected,
                 "note": note,
+                "needsPrecision": needs_precision,
                 "updatedAt": str(item.get("updatedAt") or "").strip(),
             }
     return corrections
@@ -135,7 +137,7 @@ def write_unresolved(rows, unresolved_csv, corrections):
     unresolved_csv.parent.mkdir(parents=True, exist_ok=True)
     unresolved = [row for row in rows if not row.get("lat") or not row.get("lng")]
     base_fields = list(rows[0].keys()) if rows else []
-    for field in ["direccion_corregida", "nota_correccion"]:
+    for field in ["direccion_corregida", "nota_correccion", "requiere_llamada_vecino"]:
         if field not in base_fields:
             base_fields.append(field)
     if "consulta_sugerida" not in base_fields:
@@ -148,6 +150,9 @@ def write_unresolved(rows, unresolved_csv, corrections):
             output = {field: row.get(field, "") for field in base_fields}
             output["direccion_corregida"] = correction.get("correctedAddress", row.get("direccion_corregida", ""))
             output["nota_correccion"] = correction.get("note", row.get("nota_correccion", ""))
+            output["requiere_llamada_vecino"] = "SI" if correction.get("needsPrecision") else row.get(
+                "requiere_llamada_vecino", ""
+            )
             writer.writerow(output)
     return len(unresolved)
 
@@ -189,6 +194,8 @@ def geocode_corrected_addresses(
             continue
         correction = corrections.get(ticket_key(row))
         if not correction or not correction.get("correctedAddress"):
+            continue
+        if correction.get("needsPrecision"):
             continue
         row["direccion_corregida"] = correction.get("correctedAddress", "")
         row["nota_correccion"] = correction.get("note", "")

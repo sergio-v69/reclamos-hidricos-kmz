@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Normalizador Reclamos Hidricos</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: Arial, Helvetica, sans-serif; color: #1f2933; }
+    .app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #f4f7f9; }
+    header { background: #184e77; color: #fff; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+    h1 { margin: 0; font-size: 18px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, textarea, select, button { font: inherit; border: 1px solid #cbd5e1; border-radius: 4px; }
+    input, select, button { height: 32px; padding: 0 9px; }
+    button { cursor: pointer; background: #f8fafc; color: #184e77; }
+    button.primary { background: #184e77; color: white; border-color: #184e77; }
+    .main { min-height: 0; display: grid; grid-template-columns: 390px minmax(0, 1fr); overflow: hidden; }
+    .list { overflow-y: auto; background: white; border-right: 1px solid #d5dde5; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    .stat { border: 1px solid #d9e2ec; border-radius: 6px; padding: 8px; background: #f8fbfd; }
+    .stat b { display: block; font-size: 18px; color: #184e77; }
+    .ticket { width: 100%; border: 0; border-bottom: 1px solid #eef2f5; border-radius: 0; text-align: left; padding: 9px 12px; background: white; }
+    .ticket.active, .ticket:hover { background: #edf6fb; }
+    .ticket.call .number::after { content: " llamar"; color: #9a3412; font-weight: 400; margin-left: 6px; }
+    .ticket.saved .number::after { content: " corregido"; color: #166534; font-weight: 400; margin-left: 6px; }
+    .number { font-weight: 700; color: #14213d; }
+    .meta { font-size: 11px; color: #64748b; margin-left: 6px; }
+    .addr { font-size: 12px; color: #405261; margin-top: 5px; line-height: 1.3; }
+    .editor { overflow-y: auto; padding: 14px; }
+    .panel { max-width: 980px; margin: 0 auto; }
+    .section { margin-bottom: 12px; }
+    .label { display: block; font-size: 12px; font-weight: 700; color: #405261; margin-bottom: 5px; }
+    .value, .corrected, textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; background: white; padding: 9px; line-height: 1.35; }
+    textarea { min-height: 100px; resize: vertical; }
+    .corrected { height: 38px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .status { min-height: 20px; font-size: 12px; margin-top: 8px; color: #475569; }
+    .ok { color: #166534; }
+    .error { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Normalizador Reclamos Hidricos</h1>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Buscar ticket o direccion">
+        <select id="filter"><option value="">Todos</option><option value="saved">Con correccion</option><option value="call">Llamar vecino</option><option value="pending">Sin correccion</option></select>
+        <button class="primary" onclick="applyGeocodes()">Geolocalizar corregidas</button>
+        <button onclick="loadTickets()">Actualizar</button>
+      </div>
+    </header>
+    <main class="main">
+      <aside class="list">
+        <div class="summary">
+          <div class="stat"><b id="visible">0</b><span>visibles</span></div>
+          <div class="stat"><b id="total">0</b><span>pendientes</span></div>
+          <div class="stat"><b id="saved">0</b><span>corregidos</span></div>
+          <div class="stat"><b id="calls">0</b><span>llamar</span></div>
+        </div>
+        <div id="tickets"></div>
+      </aside>
+      <section class="editor"><div id="panel" class="panel">Cargando...</div></section>
+    </main>
+  </div>
+  <script>
+    let rows = [];
+    let current = null;
+
+    function loadTickets() {
+      setStatus('Cargando tickets...');
+      google.script.run.withSuccessHandler(data => {
+        rows = data || [];
+        current = rows[0] || null;
+        renderList();
+        renderEditor();
+      }).withFailureHandler(showError).getPendingTickets();
+    }
+
+    function rowKey(row) { return String(row.ticket || row.id || row.rowNumber); }
+    function correction(row) { return { saved: !!row.direccion_corregida, call: String(row.requiere_llamada_vecino).toUpperCase() === 'SI' }; }
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch])); }
+
+    function renderList() {
+      const term = document.getElementById('search').value.toLowerCase().trim();
+      const mode = document.getElementById('filter').value;
+      const filtered = rows.filter(row => {
+        const c = correction(row);
+        if (mode === 'saved' && !c.saved) return false;
+        if (mode === 'call' && !c.call) return false;
+        if (mode === 'pending' && (c.saved || c.call)) return false;
+        if (!term) return true;
+        return [row.ticket, row.id, row.direccion, row.descripcion, row.estado].join(' ').toLowerCase().includes(term);
+      });
+      document.getElementById('tickets').innerHTML = filtered.map(row => {
+        const c = correction(row);
+        return `<button class="ticket ${current && rowKey(current) === rowKey(row) ? 'active' : ''} ${c.saved ? 'saved' : ''} ${c.call ? 'call' : ''}" onclick="selectRow('${rowKey(row)}')">
+          <span class="number">${escapeHtml(row.ticket)}</span><span class="meta">${escapeHtml(row.fecha)} ${escapeHtml(row.estado)}</span>
+          <div class="addr">${escapeHtml(row.direccion || row.descripcion || 'Sin direccion')}</div>
+        </button>`;
+      }).join('');
+      document.getElementById('visible').textContent = filtered.length;
+      document.getElementById('total').textContent = rows.length;
+      document.getElementById('saved').textContent = rows.filter(row => correction(row).saved).length;
+      document.getElementById('calls').textContent = rows.filter(row => correction(row).call).length;
+    }
+
+    function selectRow(key) {
+      current = rows.find(row => rowKey(row) === key);
+      renderList();
+      renderEditor();
+    }
+
+    function renderEditor() {
+      if (!current) {
+        document.getElementById('panel').innerHTML = 'No hay tickets pendientes.';
+        return;
+      }
+      document.getElementById('panel').innerHTML = `
+        <div class="section"><span class="label">Ticket</span><div class="value"><b>${escapeHtml(current.ticket)}</b> - ${escapeHtml(current.fecha)} - ${escapeHtml(current.estado)}</div></div>
+        <div class="section"><span class="label">Direccion original</span><div class="value">${escapeHtml(current.direccion)}</div></div>
+        <div class="section"><span class="label">Descripcion</span><div class="value">${escapeHtml(current.descripcion)}</div></div>
+        <div class="section"><label class="label">Direccion corregida</label><input id="corrected" class="corrected" value="${escapeHtml(current.direccion_corregida)}"></div>
+        <div class="section"><label class="label">Nota</label><textarea id="note">${escapeHtml(current.nota_correccion)}</textarea></div>
+        <div class="actions">
+          <button onclick="testAddress()">Probar geolocalizacion</button>
+          <button onclick="markCall()">Llamar al vecino</button>
+          <button class="primary" onclick="saveCurrent(false)">Guardar</button>
+        </div>
+        <div id="status" class="status"></div>`;
+    }
+
+    function payload(needsPrecision) {
+      return {
+        rowNumber: current.rowNumber,
+        correctedAddress: document.getElementById('corrected').value.trim(),
+        note: document.getElementById('note').value.trim(),
+        needsPrecision
+      };
+    }
+
+    function saveCurrent(needsPrecision) {
+      google.script.run.withSuccessHandler(() => {
+        current.direccion_corregida = document.getElementById('corrected').value.trim();
+        current.nota_correccion = document.getElementById('note').value.trim();
+        current.requiere_llamada_vecino = needsPrecision ? 'SI' : '';
+        renderList();
+        setStatus('Guardado.', 'ok');
+      }).withFailureHandler(showError).saveCorrection(payload(needsPrecision));
+    }
+
+    function markCall() {
+      if (!document.getElementById('note').value.trim()) {
+        document.getElementById('note').value = 'Requiere llamada al vecino para precisar ubicacion.';
+      }
+      saveCurrent(true);
+    }
+
+    function testAddress() {
+      const address = document.getElementById('corrected').value.trim();
+      if (!address) return setStatus('Ingrese una direccion corregida.', 'error');
+      setStatus('Probando geolocalizacion...');
+      google.script.run.withSuccessHandler(result => {
+        if (!result.found) return setStatus(result.message || 'No encontrada.', 'error');
+        setStatus(`Encontrada: ${result.lat}, ${result.lng} - ${result.displayName || ''}`, 'ok');
+      }).withFailureHandler(showError).testGeocode(address);
+    }
+
+    function applyGeocodes() {
+      if (!confirm('Geolocalizar direcciones corregidas y generar KMZ?')) return;
+      setStatus('Geolocalizando...');
+      google.script.run.withSuccessHandler(result => {
+        alert(`Actualizados: ${result.updated}. KMZ: ${result.kmzUrl}`);
+        loadTickets();
+      }).withFailureHandler(showError).applyCorrectedGeocodes();
+    }
+
+    function setStatus(message, kind = '') {
+      const node = document.getElementById('status') || document.getElementById('panel');
+      node.textContent = message;
+      node.className = `status ${kind}`;
+    }
+    function showError(error) { setStatus(error.message || String(error), 'error'); }
+    document.getElementById('search').addEventListener('input', renderList);
+    document.getElementById('filter').addEventListener('change', renderList);
+    loadTickets();
+  </script>
+</body>
+</html>

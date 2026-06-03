@@ -33,7 +33,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     button.danger { color: #991b1b; }
     .main { min-height: 0; overflow: hidden; display: grid; grid-template-columns: 390px minmax(0, 1fr); }
     .list { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; background: #fff; border-right: 1px solid #d5dde5; }
-    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; border-bottom: 1px solid #e5e7eb; }
     .stat { border: 1px solid #d9e2ec; border-radius: 6px; padding: 8px; background: #f8fbfd; }
     .stat b { display: block; font-size: 20px; color: #184e77; }
     .stat span { font-size: 12px; color: #52616f; }
@@ -43,6 +43,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     .ticket-row:hover, .ticket-row.active { background: #edf6fb; }
     .ticket-row.saved .ticket-number::after { content: " corregido"; color: #166534; font-weight: 400; margin-left: 6px; }
+    .ticket-row.call .ticket-number::after { content: " llamar"; color: #9a3412; font-weight: 400; margin-left: 6px; }
     .ticket-main { display: flex; gap: 8px; align-items: baseline; }
     .ticket-number { font-weight: 700; color: #14213d; }
     .ticket-date, .ticket-status { font-size: 11px; color: #64748b; }
@@ -82,7 +83,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
       <div class="toolbar">
         <input id="searchInput" type="search" placeholder="Buscar ticket, direccion o descripcion" />
-        <select id="statusFilter"><option value="">Todos</option><option value="saved">Con correccion</option><option value="pending">Sin correccion</option></select>
+        <select id="statusFilter"><option value="">Todos</option><option value="saved">Con correccion</option><option value="call">Llamar vecino</option><option value="pending">Sin correccion</option></select>
         <button id="saveAll" class="primary" type="button">Guardar correcciones</button>
         <button id="geocodeAll" type="button">Geolocalizar corregidas</button>
       </div>
@@ -93,6 +94,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="stat"><b id="visibleCount">0</b><span>visibles</span></div>
           <div class="stat"><b id="totalCount">0</b><span>pendientes</span></div>
           <div class="stat"><b id="savedCount">0</b><span>corregidos</span></div>
+          <div class="stat"><b id="callCount">0</b><span>llamar</span></div>
         </div>
         <div id="ticketList"></div>
       </aside>
@@ -150,20 +152,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function correctionRows() {
-      return Object.values(corrections).filter(item => item.correctedAddress || item.note);
+      return Object.values(corrections).filter(item => item.correctedAddress || item.note || item.needsPrecision);
     }
 
     function updateCurrentFromInputs({ rerenderList = false } = {}) {
       if (!currentKey) return;
       const ticket = TICKETS.find(item => ticketKey(item) === currentKey);
+      const existing = corrections[currentKey] || {};
       corrections[currentKey] = {
         ticket: currentKey,
         id: ticket?.id || "",
         correctedAddress: document.getElementById("correctedAddress")?.value.trim() || "",
         note: document.getElementById("note")?.value.trim() || "",
+        needsPrecision: !!existing.needsPrecision,
         updatedAt: new Date().toISOString()
       };
-      if (!corrections[currentKey].correctedAddress && !corrections[currentKey].note) {
+      if (!corrections[currentKey].correctedAddress && !corrections[currentKey].note && !corrections[currentKey].needsPrecision) {
         delete corrections[currentKey];
       }
       persistLocal();
@@ -173,9 +177,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function matches(ticket) {
       const search = document.getElementById("searchInput").value.trim().toLowerCase();
       const mode = document.getElementById("statusFilter").value;
-      const saved = !!corrections[ticketKey(ticket)]?.correctedAddress;
+      const correction = corrections[ticketKey(ticket)] || {};
+      const saved = !!correction.correctedAddress;
+      const call = !!correction.needsPrecision;
       if (mode === "saved" && !saved) return false;
-      if (mode === "pending" && saved) return false;
+      if (mode === "call" && !call) return false;
+      if (mode === "pending" && (saved || call)) return false;
       if (!search) return true;
       return [ticket.ticket, ticket.id, ticket.fecha, ticket.estado, ticket.direccion, ticket.problema, ticket.descripcion, ticket.consulta_sugerida]
         .join(" ").toLowerCase().includes(search);
@@ -189,8 +196,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       } else {
         list.innerHTML = visibleTickets.map(ticket => {
           const key = ticketKey(ticket);
-          const saved = !!corrections[key]?.correctedAddress;
-          return `<button class="ticket-row ${key === currentKey ? "active" : ""} ${saved ? "saved" : ""}" type="button" data-key="${escapeHtml(key)}">
+          const correction = corrections[key] || {};
+          const saved = !!correction.correctedAddress;
+          const call = !!correction.needsPrecision;
+          return `<button class="ticket-row ${key === currentKey ? "active" : ""} ${saved ? "saved" : ""} ${call ? "call" : ""}" type="button" data-key="${escapeHtml(key)}">
             <div class="ticket-main"><span class="ticket-number">${escapeHtml(ticket.ticket)}</span><span class="ticket-date">${escapeHtml(ticket.fecha)}</span><span class="ticket-status">${escapeHtml(ticket.estado)}</span></div>
             <div class="ticket-address">${escapeHtml(ticket.direccion || ticket.descripcion || "Sin direccion")}</div>
           </button>`;
@@ -225,6 +234,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="actions">
           <button id="editCurrent" type="button">Editar ticket</button>
           <button id="testGeocode" type="button">Probar geolocalizacion</button>
+          <button id="markCall" type="button">Llamar al vecino</button>
           <button id="saveCurrent" class="primary" type="button">Guardar este ticket</button>
           <button id="clearCurrent" class="danger" type="button">Borrar correccion</button>
         </div>
@@ -236,6 +246,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         setEditorStatus("Edicion activa para este ticket.", "ok");
       });
       document.getElementById("testGeocode").addEventListener("click", testCurrentGeocode);
+      document.getElementById("markCall").addEventListener("click", markNeedsCall);
       document.getElementById("saveCurrent").addEventListener("click", () => {
         updateCurrentFromInputs({ rerenderList: true });
         setEditing(false);
@@ -312,10 +323,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       request.send(JSON.stringify({ address }));
     }
 
+    function markNeedsCall() {
+      updateCurrentFromInputs();
+      const ticket = TICKETS.find(item => ticketKey(item) === currentKey);
+      const existing = corrections[currentKey] || {};
+      const note = existing.note || document.getElementById("note")?.value.trim() || "";
+      corrections[currentKey] = {
+        ticket: currentKey,
+        id: ticket?.id || "",
+        correctedAddress: existing.correctedAddress || "",
+        note: note || "Requiere llamada al vecino para precisar ubicacion.",
+        needsPrecision: true,
+        updatedAt: new Date().toISOString()
+      };
+      persistLocal();
+      renderEditor();
+      renderList();
+      setEditorStatus("Marcado para llamar al vecino y pedir precision.", "ok");
+    }
+
     function updateCounts() {
       document.getElementById("visibleCount").textContent = visibleTickets.length;
       document.getElementById("totalCount").textContent = TICKETS.length;
       document.getElementById("savedCount").textContent = correctionRows().length;
+      document.getElementById("callCount").textContent = Object.values(corrections).filter(item => item.needsPrecision).length;
     }
 
     function submitForm(formId, payloadId) {
@@ -375,6 +406,9 @@ def build_normalizer(input_csv, corrections_json, output_html):
                     "consulta_sugerida": clean_value(row.get("consulta_sugerida")),
                     "direccion_corregida": correction.get("correctedAddress", clean_value(row.get("direccion_corregida"))),
                     "nota_correccion": correction.get("note", clean_value(row.get("nota_correccion"))),
+                    "requiere_llamada_vecino": "SI"
+                    if correction.get("needsPrecision")
+                    else clean_value(row.get("requiere_llamada_vecino")),
                 }
             )
 

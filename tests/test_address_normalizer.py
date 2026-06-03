@@ -75,6 +75,7 @@ class AddressNormalizerTest(unittest.TestCase):
             self.assertIn("Normalizar direcciones pendientes", html)
             self.assertIn("Editar ticket", html)
             self.assertIn("Probar geolocalizacion", html)
+            self.assertIn("Llamar al vecino", html)
             self.assertIn("Guardar correcciones", html)
             self.assertIn("Geolocalizar corregidas", html)
             self.assertIn("/api/address-corrections", html)
