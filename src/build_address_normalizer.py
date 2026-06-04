@@ -64,6 +64,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .status { min-height: 20px; font-size: 12px; margin-top: 8px; color: #475569; }
     .status.ok { color: #166534; }
     .status.error { color: #b91c1c; }
+    .test-map { display: none; height: 300px; margin-top: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #e5eef5; }
+    .test-map iframe { width: 100%; height: 100%; border: 0; border-radius: 6px; display: block; }
+    .map-link { display: none; margin-top: 7px; font-size: 12px; }
+    .map-link a { color: #184e77; }
     .empty { padding: 20px; color: #64748b; }
     @media (max-width: 860px) {
       header { grid-template-columns: 1fr; }
@@ -249,7 +253,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <button id="saveCurrent" class="primary" type="button">Guardar este ticket</button>
           <button id="clearCurrent" class="danger" type="button">Borrar correccion</button>
         </div>
-        <div id="editorStatus" class="status"></div>`;
+        <div id="editorStatus" class="status"></div>
+        <div id="testMap" class="test-map"></div>
+        <div id="mapLink" class="map-link"></div>`;
       setEditing(false);
       document.getElementById("editCurrent").addEventListener("click", () => {
         setEditing(true);
@@ -295,10 +301,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       node.className = `status ${kind}`.trim();
     }
 
+    function clearTestMap() {
+      const mapNode = document.getElementById("testMap");
+      const linkNode = document.getElementById("mapLink");
+      if (mapNode) {
+        mapNode.style.display = "none";
+        mapNode.innerHTML = "";
+      }
+      if (linkNode) {
+        linkNode.style.display = "none";
+        linkNode.innerHTML = "";
+      }
+    }
+
+    function showTestMap(lat, lng, label) {
+      const mapNode = document.getElementById("testMap");
+      const linkNode = document.getElementById("mapLink");
+      if (!mapNode || !linkNode) return;
+      const osmUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`;
+      const delta = 0.003;
+      const embedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - delta}%2C${lat - delta}%2C${lng + delta}%2C${lat + delta}&layer=mapnik&marker=${lat}%2C${lng}`;
+      linkNode.innerHTML = `<a href="${osmUrl}" target="_blank" rel="noopener">Abrir ubicacion en OpenStreetMap</a>`;
+      linkNode.style.display = "block";
+      mapNode.style.display = "block";
+      mapNode.innerHTML = `<iframe title="Mapa de ubicacion probada" src="${embedUrl}" loading="lazy"></iframe>`;
+    }
+
     function testCurrentGeocode() {
       const address = document.getElementById("correctedAddress")?.value.trim() || "";
       if (!address) {
         setEditorStatus("Primero ingresa una direccion corregida.", "error");
+        clearTestMap();
         return;
       }
       updateCurrentFromInputs();
@@ -315,26 +348,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const result = JSON.parse(request.responseText || "{}");
           if (!result.ok) {
             setEditorStatus(`No se pudo probar: ${result.error || "error desconocido"}`, "error");
+            clearTestMap();
             return;
           }
           if (!result.found) {
             setEditorStatus(result.message || result.error || "No se encontro una ubicacion.", "error");
+            clearTestMap();
             return;
           }
           const cacheText = result.from_cache ? "cache" : "Nominatim";
           const place = result.display_name ? ` - ${result.display_name}` : "";
           setEditorStatus(`Encontrada: ${result.lat}, ${result.lng} (${cacheText})${place}`, "ok");
+          showTestMap(result.lat, result.lng, place || address);
         } catch (error) {
           setEditorStatus("No se pudo interpretar la respuesta del servidor.", "error");
+          clearTestMap();
         }
       };
       request.onerror = () => {
         button.disabled = false;
         setEditorStatus(`No se pudo conectar con el servidor editable (${apiBase()}). Recarga la pagina con Ctrl+F5 o reinicia src/edit_server.py.`, "error");
+        clearTestMap();
       };
       request.ontimeout = () => {
         button.disabled = false;
         setEditorStatus("La prueba de geolocalizacion tardo demasiado. Reintenta en unos minutos.", "error");
+        clearTestMap();
       };
       request.send(JSON.stringify({ address }));
     }
