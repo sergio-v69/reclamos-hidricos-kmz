@@ -131,6 +131,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }[ch]));
     }
 
+    function apiBase() {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        return location.origin;
+      }
+      return "http://127.0.0.1:8765";
+    }
+
+    function apiUrl(path) {
+      return `${apiBase()}${path}`;
+    }
+
     function loadCorrections() {
       try {
         const stored = window.localStorage ? JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") : {};
@@ -295,7 +306,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       button.disabled = true;
       setEditorStatus("Probando geolocalizacion...", "");
       const request = new XMLHttpRequest();
-      request.open("POST", `${location.origin}/api/test-geocode`, true);
+      request.open("POST", apiUrl("/api/test-geocode"), true);
       request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
       request.timeout = 30000;
       request.onload = () => {
@@ -319,7 +330,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       };
       request.onerror = () => {
         button.disabled = false;
-        setEditorStatus(`No se pudo conectar con el servidor editable (${location.origin}). Recarga la pagina con Ctrl+F5 o reinicia src/edit_server.py.`, "error");
+        setEditorStatus(`No se pudo conectar con el servidor editable (${apiBase()}). Recarga la pagina con Ctrl+F5 o reinicia src/edit_server.py.`, "error");
       };
       request.ontimeout = () => {
         button.disabled = false;
@@ -361,6 +372,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         alert("No hay direcciones corregidas para guardar.");
         return;
       }
+      document.getElementById(formId).action = apiUrl(document.getElementById(formId).getAttribute("action"));
       document.getElementById(payloadId).value = JSON.stringify(rows);
       document.getElementById(formId).submit();
     }
