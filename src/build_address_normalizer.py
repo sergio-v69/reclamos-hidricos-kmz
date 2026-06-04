@@ -106,10 +106,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </main>
   </div>
 
-  <form id="saveForm" method="POST" action="http://127.0.0.1:8765/api/address-corrections" style="display:none">
+  <form id="saveForm" method="POST" action="/api/address-corrections" style="display:none">
     <input id="savePayload" name="corrections" type="hidden" />
   </form>
-  <form id="geocodeForm" method="POST" action="http://127.0.0.1:8765/api/geocode-corrected-addresses" style="display:none">
+  <form id="geocodeForm" method="POST" action="/api/geocode-corrected-addresses" style="display:none">
     <input id="geocodePayload" name="corrections" type="hidden" />
   </form>
 
@@ -295,8 +295,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       button.disabled = true;
       setEditorStatus("Probando geolocalizacion...", "");
       const request = new XMLHttpRequest();
-      request.open("POST", "/api/test-geocode", true);
+      request.open("POST", `${location.origin}/api/test-geocode`, true);
       request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+      request.timeout = 30000;
       request.onload = () => {
         button.disabled = false;
         try {
@@ -318,7 +319,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       };
       request.onerror = () => {
         button.disabled = false;
-        setEditorStatus("No se pudo conectar con el servidor editable.", "error");
+        setEditorStatus(`No se pudo conectar con el servidor editable (${location.origin}). Recarga la pagina con Ctrl+F5 o reinicia src/edit_server.py.`, "error");
+      };
+      request.ontimeout = () => {
+        button.disabled = false;
+        setEditorStatus("La prueba de geolocalizacion tardo demasiado. Reintenta en unos minutos.", "error");
       };
       request.send(JSON.stringify({ address }));
     }
