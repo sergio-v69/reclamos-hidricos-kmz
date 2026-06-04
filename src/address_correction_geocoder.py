@@ -60,6 +60,11 @@ def load_address_corrections(path):
     return data
 
 
+def row_needs_precision(row, corrections):
+    correction = corrections.get(ticket_key(row), {})
+    return correction.get("needsPrecision") or str(row.get("requiere_llamada_vecino", "")).strip().upper() == "SI"
+
+
 def is_cached_error(value):
     return isinstance(value, dict) and value.get("error")
 
@@ -135,7 +140,11 @@ def test_geocode_address(address, cache_path, bounds=None):
 def write_unresolved(rows, unresolved_csv, corrections):
     unresolved_csv = Path(unresolved_csv)
     unresolved_csv.parent.mkdir(parents=True, exist_ok=True)
-    unresolved = [row for row in rows if not row.get("lat") or not row.get("lng")]
+    unresolved = [
+        row
+        for row in rows
+        if (not row.get("lat") or not row.get("lng")) and not row_needs_precision(row, corrections)
+    ]
     base_fields = list(rows[0].keys()) if rows else []
     for field in ["direccion_corregida", "nota_correccion", "requiere_llamada_vecino"]:
         if field not in base_fields:
@@ -157,11 +166,40 @@ def write_unresolved(rows, unresolved_csv, corrections):
     return len(unresolved)
 
 
+def write_needs_call_csv(rows, call_csv, corrections):
+    call_csv = Path(call_csv)
+    call_csv.parent.mkdir(parents=True, exist_ok=True)
+    call_rows = [row for row in rows if not row.get("lat") or not row.get("lng") if row_needs_precision(row, corrections)]
+    base_fields = list(rows[0].keys()) if rows else []
+    for field in ["direccion_corregida", "nota_correccion", "requiere_llamada_vecino"]:
+        if field not in base_fields:
+            base_fields.append(field)
+    with call_csv.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=base_fields)
+        writer.writeheader()
+        for row in call_rows:
+            correction = corrections.get(ticket_key(row), {})
+            output = {field: row.get(field, "") for field in base_fields}
+            output["direccion_corregida"] = correction.get("correctedAddress", row.get("direccion_corregida", ""))
+            output["nota_correccion"] = correction.get("note", row.get("nota_correccion", ""))
+            output["requiere_llamada_vecino"] = "SI"
+            writer.writerow(output)
+    return {"call_count": len(call_rows), "call_csv": str(call_csv)}
+
+
+def refresh_needs_call_csv(source_csv, call_csv, corrections_path):
+    corrections = load_address_corrections(corrections_path)
+    with Path(source_csv).open("r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    return write_needs_call_csv(rows, call_csv, corrections)
+
+
 def geocode_corrected_addresses(
     csv_path,
     kmz_path,
     map_html_path,
     unresolved_csv,
+    call_csv,
     corrections_path,
     cache_path,
     delay=1.1,
@@ -229,11 +267,13 @@ def geocode_corrected_addresses(
 
     mapped = generate_kmz(rows, kmz_path)
     build_map(csv_path, map_html_path)
+    call_result = write_needs_call_csv(rows, call_csv, corrections)
     unresolved = write_unresolved(rows, unresolved_csv, corrections)
     return {
         "attempted": attempted,
         "updated": updated,
         "mapped": mapped,
+        **call_result,
         "unresolved": unresolved,
         "csv": str(csv_path),
         "kmz": str(Path(kmz_path)),

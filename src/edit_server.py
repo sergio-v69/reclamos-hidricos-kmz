@@ -5,7 +5,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from address_correction_geocoder import geocode_corrected_addresses, save_address_corrections, test_geocode_address
+from address_correction_geocoder import (
+    geocode_corrected_addresses,
+    refresh_needs_call_csv,
+    save_address_corrections,
+    test_geocode_address,
+)
 from apply_location_corrections import apply_corrections
 from build_address_normalizer import build_normalizer
 from build_interactive_map import build_map
@@ -19,6 +24,7 @@ class EditHandler(SimpleHTTPRequestHandler):
     copy_kmz_path = None
     copy_html_path = None
     unresolved_csv_path = None
+    call_csv_path = None
     address_corrections_path = None
     normalizer_html_path = None
     geocode_cache_path = None
@@ -66,11 +72,12 @@ class EditHandler(SimpleHTTPRequestHandler):
         try:
             payload, wants_redirect = self.read_payload()
             result = save_address_corrections(self.address_corrections_path, payload.get("corrections", []))
+            call_result = refresh_needs_call_csv(self.copy_csv_path, self.call_csv_path, self.address_corrections_path)
             build_normalizer(self.unresolved_csv_path, self.address_corrections_path, self.normalizer_html_path)
             if wants_redirect:
                 self.redirect(f"/normalizador_direcciones.html?guardadas={result['saved']}")
                 return
-            self.send_json({"ok": True, **result})
+            self.send_json({"ok": True, **result, **call_result})
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, status=500)
 
@@ -83,6 +90,7 @@ class EditHandler(SimpleHTTPRequestHandler):
                 self.copy_kmz_path,
                 self.copy_html_path,
                 self.unresolved_csv_path,
+                self.call_csv_path,
                 self.address_corrections_path,
                 self.geocode_cache_path,
             )
@@ -146,6 +154,7 @@ def build_parser():
     parser.add_argument("--copy-kmz", default="../outputs/reclamos_hidricos_geolocalizados_copia.kmz")
     parser.add_argument("--copy-html", default="../outputs/mapa_reclamos_interactivo_copia.html")
     parser.add_argument("--unresolved-csv", default="../outputs/reclamos_faltantes_sin_ubicacion.csv")
+    parser.add_argument("--call-csv", default="../outputs/reclamos_para_llamar_vecino.csv")
     parser.add_argument("--address-corrections", default="../outputs/direcciones_corregidas_no_geolocalizados.json")
     parser.add_argument("--normalizer-html", default="../outputs/normalizador_direcciones.html")
     parser.add_argument("--geocode-cache", default="../work/geocode_missing_copia_cache.json")
@@ -162,6 +171,7 @@ def main():
     EditHandler.copy_kmz_path = Path(args.copy_kmz).resolve()
     EditHandler.copy_html_path = Path(args.copy_html).resolve()
     EditHandler.unresolved_csv_path = Path(args.unresolved_csv).resolve()
+    EditHandler.call_csv_path = Path(args.call_csv).resolve()
     EditHandler.address_corrections_path = Path(args.address_corrections).resolve()
     EditHandler.normalizer_html_path = Path(args.normalizer_html).resolve()
     EditHandler.geocode_cache_path = Path(args.geocode_cache).resolve()

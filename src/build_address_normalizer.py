@@ -392,9 +392,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         updatedAt: new Date().toISOString()
       };
       persistLocal();
-      renderEditor();
-      renderList();
-      setEditorStatus("Marcado para llamar al vecino y pedir precision.", "ok");
+      const button = document.getElementById("markCall");
+      button.disabled = true;
+      setEditorStatus("Guardando en CSV de llamados y quitando de la lista...", "");
+      const request = new XMLHttpRequest();
+      request.open("POST", apiUrl("/api/address-corrections"), true);
+      request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+      request.timeout = 30000;
+      request.onload = () => {
+        button.disabled = false;
+        try {
+          const result = JSON.parse(request.responseText || "{}");
+          if (!result.ok) {
+            setEditorStatus(`No se pudo guardar: ${result.error || "error desconocido"}`, "error");
+            return;
+          }
+          const index = TICKETS.findIndex(item => ticketKey(item) === currentKey);
+          if (index !== -1) TICKETS.splice(index, 1);
+          currentKey = TICKETS[index] ? ticketKey(TICKETS[index]) : (TICKETS[0] ? ticketKey(TICKETS[0]) : "");
+          persistLocal();
+          renderList();
+          renderEditor();
+          setEditorStatus(`Ticket enviado a llamados. CSV: ${result.call_csv || "reclamos_para_llamar_vecino.csv"}`, "ok");
+        } catch (error) {
+          setEditorStatus("No se pudo interpretar la respuesta del servidor.", "error");
+        }
+      };
+      request.onerror = () => {
+        button.disabled = false;
+        setEditorStatus(`No se pudo conectar con el servidor editable (${apiBase()}).`, "error");
+      };
+      request.ontimeout = () => {
+        button.disabled = false;
+        setEditorStatus("El guardado del llamado tardo demasiado.", "error");
+      };
+      request.send(JSON.stringify({ corrections: correctionRows() }));
     }
 
     function updateCounts() {
@@ -448,6 +480,8 @@ def build_normalizer(input_csv, corrections_json, output_html):
                 continue
             key = ticket_key(row)
             correction = corrections.get(key, {})
+            if correction.get("needsPrecision") or clean_value(row.get("requiere_llamada_vecino")).upper() == "SI":
+                continue
             tickets.append(
                 {
                     "excel_row": clean_value(row.get("excel_row")),
